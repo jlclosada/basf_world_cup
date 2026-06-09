@@ -27,6 +27,12 @@ const Scoring = (function () {
     return 0;
   }
 
+  // Puntos { exact, outcome } de una ronda de eliminatoria (con respaldo).
+  function koPoints(roundId) {
+    const byRound = (S.koByRound && S.koByRound[roundId]) || null;
+    return byRound || { exact: S.koExact, outcome: S.koOutcome };
+  }
+
   // Calcula la clasificación de un grupo a partir de los resultados reales.
   // Devuelve { order: [nombres ordenados], complete: bool, table: [...] }.
   // Desempate: puntos > diferencia de goles > goles a favor > alfabético.
@@ -136,12 +142,18 @@ const Scoring = (function () {
       }
     });
 
-    // --- Top goleadores (posición exacta) ---
+    // --- Top goleadores ---
+    // Posición exacta -> scorer; acertado pero en otra posición del Top -> scorerInTop.
     const pts3 = prediction.topScorers || [];
     const rts3 = results.topScorers || [];
+    const rts3Norm = rts3.map(norm).filter(Boolean);
     for (let i = 0; i < WC_CONFIG.topScorerCount; i++) {
-      if (pts3[i] && rts3[i] && norm(pts3[i]) === norm(rts3[i])) {
+      const p = pts3[i];
+      if (!p) continue;
+      if (rts3[i] && norm(p) === norm(rts3[i])) {
         b.topScorers += S.scorer;
+      } else if (rts3Norm.includes(norm(p))) {
+        b.topScorers += S.scorerInTop || 0;
       }
     }
 
@@ -159,7 +171,7 @@ const Scoring = (function () {
       if (s && realSemis.includes(norm(s))) b.semifinalists += S.semifinalist;
     });
 
-    // --- Partidos de eliminatoria ---
+    // --- Partidos de eliminatoria (puntos por ronda) ---
     const pko = prediction.koMatches || {};
     const rko = results.koMatches || {};
     const koList =
@@ -167,9 +179,10 @@ const Scoring = (function () {
         ? WC_CONFIG.koFixtures
         : (results.knockout && results.knockout.matches) || [];
     koList.forEach((m) => {
-      const pts = matchPoints(pko[m.id], rko[m.id], S.koExact, S.koOutcome);
+      const rp = koPoints(m.round);
+      const pts = matchPoints(pko[m.id], rko[m.id], rp.exact, rp.outcome);
       b.koMatches += pts;
-      if (pts === S.koExact) b.exactCount++;
+      if (pts === rp.exact && rp.exact > 0) b.exactCount++;
     });
 
     b.total =
@@ -206,5 +219,12 @@ const Scoring = (function () {
     return rows;
   }
 
-  return { score, leaderboard, matchPoints, groupTable, realGroupOrder };
+  return {
+    score,
+    leaderboard,
+    matchPoints,
+    koPoints,
+    groupTable,
+    realGroupOrder,
+  };
 })();

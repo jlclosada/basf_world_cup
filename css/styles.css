@@ -532,6 +532,24 @@ input[type='text'].scorer {
   font-weight: 800;
   color: var(--primary);
 }
+.rules-table td.rules-sub {
+  text-align: left;
+  font-weight: 700;
+  color: var(--accent);
+  background: rgba(255, 255, 255, 0.03);
+  text-transform: uppercase;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+.round-pts {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--primary);
+  background: rgba(255, 255, 255, 0.06);
+  padding: 2px 8px;
+  border-radius: 999px;
+  margin-left: 8px;
+}
 #rules h3 {
   color: var(--accent);
   margin-top: 22px;

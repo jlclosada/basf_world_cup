@@ -25,17 +25,33 @@ const WC_CONFIG = {
 
   topScorerCount: 3,
 
-  // -------- Puntuación --------
+  // -------- Puntuación (rebalanceada) --------
+  // Filosofía: la fase de grupos da MUCHOS partidos, así que cada uno pesa
+  // poco; las apuestas "de torneo" (campeón, eliminatorias avanzadas,
+  // goleadores) pesan más y son las que deciden la porra.
   scoring: {
-    exact: 5, // resultado exacto en un partido de grupos
-    outcome: 3, // acierto 1X2 sin marcador exacto
-    groupPos: 5, // por cada posición acertada en la tabla de un grupo
-    scorer: 15, // por cada goleador del Top 3 en su posición exacta
-    champion: 20, // acertar el campeón
-    finalist: 10, // acertar el subcampeón (finalista que pierde)
-    semifinalist: 5, // por cada semifinalista (los 2 que caen en semis)
-    koExact: 5, // resultado exacto en partido de eliminatoria (90')
-    koOutcome: 3, // acertar quién pasa de ronda
+    exact: 3, // resultado exacto en un partido de grupos
+    outcome: 1, // acierto 1X2 sin marcador exacto
+    groupPos: 3, // por cada posición acertada en la tabla de un grupo
+    scorer: 12, // goleador del Top 3 en su posición EXACTA
+    scorerInTop: 5, // goleador acertado pero en otra posición del Top 3
+    champion: 30, // acertar el campeón
+    finalist: 18, // acertar el subcampeón (finalista que pierde)
+    semifinalist: 10, // por cada semifinalista (los 2 que caen en semis)
+
+    // Eliminatorias: el valor sube según avanza la ronda (más emoción al
+    // final). { exact, outcome } por ronda; si falta una ronda se usan
+    // koExact/koOutcome como respaldo.
+    koExact: 6, // respaldo (exacto)
+    koOutcome: 3, // respaldo (acertar quién pasa)
+    koByRound: {
+      R32: { exact: 4, outcome: 2 }, // dieciseisavos
+      R16: { exact: 6, outcome: 3 }, // octavos
+      QF: { exact: 8, outcome: 4 }, // cuartos
+      SF: { exact: 12, outcome: 6 }, // semifinales
+      TP: { exact: 6, outcome: 3 }, // tercer puesto
+      F: { exact: 16, outcome: 8 }, // final
+    },
   },
 
   // -------- Grupos (sorteo real Mundial 2026) --------
@@ -199,14 +215,7 @@ WC_CONFIG.groupMatches = (function buildFixtures() {
     ['H', '2026-06-15', '12:00', 'Spain', 'Cape Verde', 'Estadio Atlanta'],
     ['G', '2026-06-15', '15:00', 'Belgium', 'Egypt', 'Estadio Seattle'],
     ['H', '2026-06-15', '18:00', 'Saudi Arabia', 'Uruguay', 'Estadio Miami'],
-    [
-      'G',
-      '2026-06-15',
-      '21:00',
-      'Iran',
-      'New Zealand',
-      'Estadio Los Ángeles',
-    ],
+    ['G', '2026-06-15', '21:00', 'Iran', 'New Zealand', 'Estadio Los Ángeles'],
     [
       'I',
       '2026-06-16',
@@ -236,14 +245,7 @@ WC_CONFIG.groupMatches = (function buildFixtures() {
       'Colombia',
       'Estadio Ciudad de México',
     ],
-    [
-      'A',
-      '2026-06-18',
-      '12:00',
-      'Czechia',
-      'South Africa',
-      'Estadio Atlanta',
-    ],
+    ['A', '2026-06-18', '12:00', 'Czechia', 'South Africa', 'Estadio Atlanta'],
     [
       'B',
       '2026-06-18',
@@ -287,14 +289,7 @@ WC_CONFIG.groupMatches = (function buildFixtures() {
       'Estadio Bahía de San Francisco',
     ],
     ['F', '2026-06-20', '13:00', 'Netherlands', 'Sweden', 'Estadio Houston'],
-    [
-      'E',
-      '2026-06-20',
-      '16:00',
-      'Germany',
-      'Ivory Coast',
-      'Estadio Toronto',
-    ],
+    ['E', '2026-06-20', '16:00', 'Germany', 'Ivory Coast', 'Estadio Toronto'],
     ['E', '2026-06-20', '22:00', 'Ecuador', 'Curaçao', 'Estadio Kansas City'],
     ['F', '2026-06-20', '00:00', 'Tunisia', 'Japan', 'Estadio Monterrey'],
     ['H', '2026-06-21', '12:00', 'Spain', 'Saudi Arabia', 'Estadio Atlanta'],

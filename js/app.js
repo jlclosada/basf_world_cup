@@ -84,6 +84,66 @@ const App = (function () {
       .replace(/4º/g, '4th');
   }
 
+  // Resuelve un "slot" del cuadro (p. ej. "1º Grupo E", "Ganador P74") al
+  // nombre real del país a partir de un contexto:
+  //   ctx.groupStandings -> orden de cada grupo (1º..4º)
+  //   ctx.koMatches       -> marcadores de cada cruce (para Ganador/Perdedor)
+  //   ctx.overrides       -> equipos ya fijados a mano (koTeams), tienen prioridad
+  //   - "1º/2º Grupo X" -> equipo en esa posición de la tabla
+  //   - "Ganador/Perdedor PNN" -> se resuelve recursivamente con sus marcadores
+  // Devuelve '' si todavía no se puede determinar (p. ej. 3º de varios grupos
+  // o un cruce sin marcador / empatado).
+  function resolveSlot(slot, ctx, depth) {
+    if (!slot || depth > 12) return '';
+    // 1º / 2º de un grupo concreto.
+    let m = slot.match(/^([12])º\s+Grupo\s+([A-L])$/);
+    if (m) {
+      const order = (ctx.groupStandings && ctx.groupStandings[m[2]]) || [];
+      return order[+m[1] - 1] || '';
+    }
+    // 3º de varios grupos -> no se puede saber cuál, se deja el slot.
+    if (/^3º\s+Grupo/.test(slot)) return '';
+    // Ganador / Perdedor de un partido anterior.
+    m = slot.match(/^(Ganador|Perdedor)\s+P(\d+)$/);
+    if (m) {
+      const fix = WC_CONFIG.koFixtures.find((f) => f.num === +m[2]);
+      if (!fix) return '';
+      const ov = (ctx.overrides && ctx.overrides[fix.id]) || {};
+      const home = ov.home || resolveSlot(fix.home, ctx, depth + 1);
+      const away = ov.away || resolveSlot(fix.away, ctx, depth + 1);
+      if (!home || !away) return '';
+      const sc = (ctx.koMatches && ctx.koMatches[fix.id]) || {};
+      if (
+        sc.home === '' ||
+        sc.away === '' ||
+        sc.home == null ||
+        sc.away == null
+      )
+        return '';
+      if (+sc.home === +sc.away) return ''; // empate: aún sin ganador
+      const homeWins = +sc.home > +sc.away;
+      const wantWinner = m[1] === 'Ganador';
+      return homeWins === wantWinner ? home : away;
+    }
+    return '';
+  }
+
+  // Contexto "oficial" para resolver el cuadro en el panel de admin: usa la
+  // clasificación real de cada grupo (calculada o ajustada a mano) y los
+  // resultados oficiales de las eliminatorias ya jugadas.
+  function officialSlotCtx() {
+    const r = state.results;
+    const gs = {};
+    Object.keys(WC_CONFIG.groups).forEach((g) => {
+      gs[g] = Scoring.realGroupOrder(g, r) || [];
+    });
+    return {
+      groupStandings: gs,
+      koMatches: r.koMatches || {},
+      overrides: r.koTeams || {},
+    };
+  }
+
   // --- Horarios y bloqueo por partido ---
   // Las horas del calendario son del Este de EE. UU. (EDT = UTC-4 en jun/jul).
   // El bloqueo se cierra 1 h antes del inicio (instante absoluto).
@@ -153,15 +213,24 @@ const App = (function () {
     return `<div class="match-meta">${parts.join(' · ')}${lockHtml}</div>`;
   }
 
-  // Cuadro de eliminatorias: fixtures de config + nombres reales que el
-  // organizador haya rellenado (state.results.koTeams[id] = {home, away}).
-  function koMatchList() {
+  // Cuadro de eliminatorias: fixtures de config + nombres reales.
+  // Prioridad de cada hueco:
+  //   1) nombre oficial puesto por el organizador (state.results.koTeams)
+  //   2) país deducido de la propia predicción del usuario (resolveSlot)
+  //   3) etiqueta del slot traducida ("1st Group A")
+  function koMatchList(pred) {
     const overrides = state.results.koTeams || {};
+    const p = pred || myPrediction();
+    const ctx = {
+      groupStandings: p.groupStandings,
+      koMatches: p.koMatches,
+      overrides,
+    };
     return WC_CONFIG.koFixtures.map((m) => {
       const o = overrides[m.id] || {};
       return Object.assign({}, m, {
-        home: o.home || slotEN(m.home),
-        away: o.away || slotEN(m.away),
+        home: o.home || resolveSlot(m.home, ctx, 0) || slotEN(m.home),
+        away: o.away || resolveSlot(m.away, ctx, 0) || slotEN(m.away),
       });
     });
   }
@@ -237,6 +306,20 @@ const App = (function () {
     );
     $('#savePredBtn').addEventListener('click', savePrediction);
     $('#resetPredBtn').addEventListener('click', resetMyPrediction);
+
+    // Al cambiar un marcador de eliminatoria, recalcula los equipos de las
+    // rondas siguientes con la predicción actual (sin necesidad de guardar).
+    $('#sub-eliminatorias').addEventListener('change', (e) => {
+      if (e.target.matches('input[data-koid]')) {
+        renderKnockout(collectPrediction());
+      }
+    });
+    // Al cambiar las tablas de grupos, refresca el cuadro (1º/2º de grupo).
+    $('#sub-tablas').addEventListener('change', (e) => {
+      if (e.target.matches('select[data-group]')) {
+        renderKnockout(collectPrediction());
+      }
+    });
   }
 
   function doLogin() {
@@ -430,7 +513,7 @@ const App = (function () {
     let scorers = '';
     for (let i = 0; i < WC_CONFIG.topScorerCount; i++) {
       scorers += `<div class="field">
-        <label>${i + 1}${ordSuffix(i + 1)} top scorer (${sc.scorer} pts)</label>
+        <label>${i + 1}${ordSuffix(i + 1)} top scorer (${sc.scorer} pts exact · ${sc.scorerInTop} in Top ${WC_CONFIG.topScorerCount})</label>
         <input type="text" class="scorer" data-scorer="${i}" maxlength="40"
           placeholder="Player name" value="${esc(pred.topScorers[i] || '')}" ${locked ? 'disabled' : ''}/>
       </div>`;
@@ -455,35 +538,36 @@ const App = (function () {
       </div>
       <div class="card" style="margin-top:16px">
         <h3 class="group-title">👟 Top ${WC_CONFIG.topScorerCount} scorers</h3>
-        <p class="hint">Type the name exactly (e.g. «Mbappé», «Haaland»). The exact order matters.</p>
+        <p class="hint">Type the name exactly (e.g. «Mbappé», «Haaland»). Exact position scores full points; a correct name in another Top ${WC_CONFIG.topScorerCount} slot still scores ${sc.scorerInTop}.</p>
         ${scorers}
       </div>`;
   }
 
   // ---------- Predicciones: eliminatorias ----------
-  function renderKnockout() {
-    const pred = myPrediction();
+  function renderKnockout(predOverride) {
+    const pred = predOverride || myPrediction();
     const ko = state.results.knockout;
     const locked = state.locks.knockout;
     const rko = state.results.koMatches || {};
-    const matches = koMatchList();
+    const matches = koMatchList(pred);
 
     if (!ko.active) {
       $('#sub-eliminatorias').innerHTML = `<div class="card admin-locked">
         <h3>⏳ Knockouts not available yet</h3>
-        <p class="hint">When the group stage ends, the organizer will turn on «knockout mode» and the 32 ties (with their slots, e.g. «1st Group A») will appear here for you to enter your results.</p></div>`;
+        <p class="hint">When the group stage ends, the organizer will turn on «knockout mode» and the 32 ties will appear here. Each slot fills in automatically with the country from your own group predictions (e.g. the team you put 1st in Group A).</p></div>`;
       return;
     }
 
     const sc = WC_CONFIG.scoring;
-    let html = `<p class="hint">Enter the result of each tie (score after 90'). ${sc.koExact} pts exact · ${sc.koOutcome} pts for picking who advances.</p>`;
+    let html = `<p class="hint">Teams fill in automatically from your group standings and previous rounds. Enter the result of each tie (score after 90'). Points scale by round — the further the round, the more they are worth (the final exact is worth ${(Scoring.koPoints('F') || {}).exact} pts).</p>`;
     WC_CONFIG.koRounds.forEach((r) => {
       const ms = matches.filter((m) => m.round === r.id);
       if (!ms.length) return;
-      html += `<div class="group-block"><h3 class="group-title">${r.name}</h3>`;
+      const rp = Scoring.koPoints(r.id);
+      html += `<div class="group-block"><h3 class="group-title">${r.name} <span class="round-pts">${rp.exact} / ${rp.outcome} pts</span></h3>`;
       ms.forEach((m) => {
         const p = pred.koMatches[m.id] || { home: '', away: '' };
-        const badge = matchBadge(p, rko[m.id], sc.koExact, sc.koOutcome);
+        const badge = matchBadge(p, rko[m.id], rp.exact, rp.outcome);
         html += `
           ${matchMeta(m)}
           <div class="match">
@@ -638,24 +722,34 @@ const App = (function () {
   // ---------- Reglas ----------
   function renderRules() {
     const s = WC_CONFIG.scoring;
+    const kp = (id) => Scoring.koPoints(id);
     $('#rules').innerHTML = `
       <div class="card">
         <h2 style="margin-top:0">📖 How the pool works</h2>
+        <p class="hint">The scoring is balanced so the tournament bets (champion, deep knockout rounds, top scorers) decide the pool — not just grinding group scores.</p>
         <table class="rules-table">
           <tr><th>Item</th><th>Points</th></tr>
-          <tr><td>Exact match result (e.g. 2–1)</td><td>${s.exact}</td></tr>
-          <tr><td>Correct outcome (winner or draw, without exact score)</td><td>${s.outcome}</td></tr>
+          <tr><td>Group match · exact result (e.g. 2–1)</td><td>${s.exact}</td></tr>
+          <tr><td>Group match · correct outcome (winner or draw)</td><td>${s.outcome}</td></tr>
           <tr><td>Correct position in a group table (each one)</td><td>${s.groupPos}</td></tr>
-          <tr><td>Top ${WC_CONFIG.topScorerCount} scorer in the exact position (each one)</td><td>${s.scorer}</td></tr>
+          <tr><td>Top ${WC_CONFIG.topScorerCount} scorer · exact position</td><td>${s.scorer}</td></tr>
+          <tr><td>Top ${WC_CONFIG.topScorerCount} scorer · right name, wrong position</td><td>${s.scorerInTop}</td></tr>
+          <tr><td class="rules-sub" colspan="2">Knockout matches — exact / advancing (scaled by round)</td></tr>
+          <tr><td>Round of 32</td><td>${kp('R32').exact} / ${kp('R32').outcome}</td></tr>
+          <tr><td>Round of 16</td><td>${kp('R16').exact} / ${kp('R16').outcome}</td></tr>
+          <tr><td>Quarter-finals</td><td>${kp('QF').exact} / ${kp('QF').outcome}</td></tr>
+          <tr><td>Semi-finals</td><td>${kp('SF').exact} / ${kp('SF').outcome}</td></tr>
+          <tr><td>Third place</td><td>${kp('TP').exact} / ${kp('TP').outcome}</td></tr>
+          <tr><td>Final</td><td>${kp('F').exact} / ${kp('F').outcome}</td></tr>
+          <tr><td class="rules-sub" colspan="2">Tournament bracket</td></tr>
           <tr><td>World champion</td><td>${s.champion}</td></tr>
           <tr><td>Runner-up / finalist</td><td>${s.finalist}</td></tr>
           <tr><td>Semi-finalist (each of the 2 knocked out in the semis)</td><td>${s.semifinalist}</td></tr>
-          <tr><td>Knockout match exact / correct team advancing</td><td>${s.koExact} / ${s.koOutcome}</td></tr>
         </table>
         <h3>🗓️ Two phases</h3>
         <ul>
           <li><strong>Phase 1 (before the World Cup):</strong> fill in the 72 group matches, the standings of the 12 groups, the Top ${WC_CONFIG.topScorerCount} scorers and the bracket (champion, finalist and semi-finalists).</li>
-          <li><strong>Phase 2 (knockout mode):</strong> once the ties are known, come back and fill in the knockout results.</li>
+          <li><strong>Phase 2 (knockout mode):</strong> once the ties are known, come back and fill in the knockout results. They are worth more the deeper the round.</li>
         </ul>
         <h3>✅ Tips</h3>
         <ul>
@@ -764,9 +858,12 @@ const App = (function () {
         <div class="field"><label>Semi-finalist 2 (knocked out in semis)</label><select id="res-semi-1">${opts((b.semifinalists || [])[1])}</select></div>
       </div>`;
 
-    // Cuadro de eliminatorias (predefinido). El admin rellena el nombre real
-    // de cada equipo (sustituyendo el slot) y el resultado.
+    // Cuadro de eliminatorias. Los equipos se generan AUTOMÁTICAMENTE a partir
+    // de la clasificación oficial de los grupos y de los resultados ya
+    // jugados (placeholder). El admin solo escribe para corregir o para fijar
+    // los "mejores terceros", que no se pueden deducir solos.
     const koTeams = r.koTeams || {};
+    const ctx = officialSlotCtx();
     let koListHtml = '';
     WC_CONFIG.koRounds.forEach((round) => {
       const ms = WC_CONFIG.koFixtures.filter((m) => m.round === round.id);
@@ -775,14 +872,18 @@ const App = (function () {
       ms.forEach((m) => {
         const res = (r.koMatches || {})[m.id] || { home: '', away: '' };
         const ov = koTeams[m.id] || {};
+        const autoH = resolveSlot(m.home, ctx, 0);
+        const autoA = resolveSlot(m.away, ctx, 0);
+        const phH = autoH || slotEN(m.home);
+        const phA = autoA || slotEN(m.away);
         koListHtml += `${matchMeta(m)}<div class="ko-admin-row">
-          <input type="text" class="ko-team" list="teamlist" data-koteam="${m.id}" data-side="home" placeholder="${esc(slotEN(m.home))}" value="${esc(ov.home || '')}"/>
+          <input type="text" class="ko-team" list="teamlist" data-koteam="${m.id}" data-side="home" placeholder="${esc(phH)}" value="${esc(ov.home || '')}"/>
           <div class="score">
             <input type="number" min="0" data-rkoid="${m.id}" data-side="home" value="${res.home}"/>
             <span class="dash">–</span>
             <input type="number" min="0" data-rkoid="${m.id}" data-side="away" value="${res.away}"/>
           </div>
-          <input type="text" class="ko-team" list="teamlist" data-koteam="${m.id}" data-side="away" placeholder="${esc(slotEN(m.away))}" value="${esc(ov.away || '')}"/>
+          <input type="text" class="ko-team" list="teamlist" data-koteam="${m.id}" data-side="away" placeholder="${esc(phA)}" value="${esc(ov.away || '')}"/>
         </div>`;
       });
     });
@@ -805,7 +906,7 @@ const App = (function () {
 
       <div class="card admin-section">
         <h3>🏟️ Knockout bracket</h3>
-        <p class="hint">The 32 ties are already loaded with their slots (e.g. «1st Group A»). As they become known, type the real team in each box (leave empty to keep the slot) and enter the result.</p>
+        <p class="hint">Pairings are generated automatically from the official group standings and the results already played (shown in grey). You only need to type a team to fix the «best thirds» or to correct something. Leave a box empty to keep the automatic team.</p>
         <datalist id="teamlist">${teamList}</datalist>
         <div id="koList">${koListHtml}</div>
       </div>
@@ -827,6 +928,56 @@ const App = (function () {
   function bindAdminEvents() {
     $('#saveResultsBtn').addEventListener('click', saveResults);
     $('#resetAllBtn').addEventListener('click', resetAllData);
+
+    // Al introducir resultados de grupo, ajustar tablas o marcadores de
+    // eliminatoria, regenera automáticamente los emparejamientos del cuadro.
+    // El #adminPanel persiste entre renders, así que solo se enlaza una vez.
+    const panel = $('#adminPanel');
+    if (!panel._koBound) {
+      panel._koBound = true;
+      panel.addEventListener('change', (e) => {
+        if (
+          e.target.matches(
+            '[data-rmid], [data-rgroup], [data-rkoid], #koActive',
+          )
+        ) {
+          refreshKoList();
+        }
+      });
+    }
+  }
+
+  // Recalcula los equipos del cuadro de admin desde el estado actual del
+  // formulario (sin guardar) y reescribe solo la lista de cruces.
+  function refreshKoList() {
+    const koList = $('#koList');
+    if (!koList) return;
+    collectResults(); // lee el DOM hacia state.results (sin persistir)
+    const r = state.results;
+    const koTeams = r.koTeams || {};
+    const ctx = officialSlotCtx();
+    let html = '';
+    WC_CONFIG.koRounds.forEach((round) => {
+      const ms = WC_CONFIG.koFixtures.filter((m) => m.round === round.id);
+      if (!ms.length) return;
+      html += `<h4 class="group-title">${round.name}</h4>`;
+      ms.forEach((m) => {
+        const res = (r.koMatches || {})[m.id] || { home: '', away: '' };
+        const ov = koTeams[m.id] || {};
+        const phH = resolveSlot(m.home, ctx, 0) || slotEN(m.home);
+        const phA = resolveSlot(m.away, ctx, 0) || slotEN(m.away);
+        html += `${matchMeta(m)}<div class="ko-admin-row">
+          <input type="text" class="ko-team" list="teamlist" data-koteam="${m.id}" data-side="home" placeholder="${esc(phH)}" value="${esc(ov.home || '')}"/>
+          <div class="score">
+            <input type="number" min="0" data-rkoid="${m.id}" data-side="home" value="${res.home}"/>
+            <span class="dash">–</span>
+            <input type="number" min="0" data-rkoid="${m.id}" data-side="away" value="${res.away}"/>
+          </div>
+          <input type="text" class="ko-team" list="teamlist" data-koteam="${m.id}" data-side="away" placeholder="${esc(phA)}" value="${esc(ov.away || '')}"/>
+        </div>`;
+      });
+    });
+    koList.innerHTML = html;
   }
 
   function collectResults() {
