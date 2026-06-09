@@ -596,6 +596,24 @@ input[type='text'].scorer {
 .admin-section h3 {
   color: var(--accent);
 }
+.participants-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+.participant-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.participant-name {
+  font-weight: 600;
+}
 .toggle-row {
   display: flex;
   align-items: center;

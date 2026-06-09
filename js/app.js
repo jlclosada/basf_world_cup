@@ -892,6 +892,25 @@ const App = (function () {
       .map((t) => `<option value="${esc(t.name)}">`)
       .join('');
 
+    // Lista de participantes con su número de predicciones, para que el admin
+    // pueda borrar a un jugador concreto (p. ej. usuarios de prueba).
+    const participants = Object.keys(state.predictions || {}).sort((a, b) =>
+      a.localeCompare(b),
+    );
+    let participantsHtml;
+    if (!participants.length) {
+      participantsHtml = `<p class="hint">No participants yet.</p>`;
+    } else {
+      participantsHtml = `<div class="participants-list">${participants
+        .map(
+          (u) => `<div class="participant-row">
+            <span class="participant-name">${esc(u)}</span>
+            <button class="btn danger small" data-deluser="${esc(u)}">🗑️ Delete</button>
+          </div>`,
+        )
+        .join('')}</div>`;
+    }
+
     $('#adminPanel').innerHTML = `
       <div class="card admin-section">
         <h3>⚙️ Locks and knockout mode</h3>
@@ -916,6 +935,12 @@ const App = (function () {
       <div class="card admin-section"><h3>👟 Official top scorers</h3>${scorersHtml}</div>
       <div class="card admin-section"><h3>🏆 Official bracket</h3>${bracketHtml}</div>
 
+      <div class="card admin-section">
+        <h3>👥 Participants</h3>
+        <p class="hint">Remove a single participant's predictions (e.g. test users). This only deletes that person, not the official results.</p>
+        ${participantsHtml}
+      </div>
+
       <div class="save-bar" style="justify-content:flex-end">
         <span id="adminSaveStatus" class="save-status"></span>
         <button id="resetAllBtn" class="btn danger small">🗑️ Delete ALL data</button>
@@ -928,6 +953,11 @@ const App = (function () {
   function bindAdminEvents() {
     $('#saveResultsBtn').addEventListener('click', saveResults);
     $('#resetAllBtn').addEventListener('click', resetAllData);
+    $$('[data-deluser]').forEach((btn) =>
+      btn.addEventListener('click', () =>
+        deleteParticipant(btn.dataset.deluser),
+      ),
+    );
 
     // Al introducir resultados de grupo, ajustar tablas o marcadores de
     // eliminatoria, regenera automáticamente los emparejamientos del cuadro.
@@ -1042,6 +1072,24 @@ const App = (function () {
       $('#adminSaveStatus').textContent =
         '✅ Saved ' + new Date().toLocaleTimeString();
       renderBanners();
+    } catch (e) {
+      $('#adminSaveStatus').textContent = '❌ ' + e.message;
+    }
+  }
+
+  // Borra las predicciones de un solo participante (p. ej. un usuario de prueba).
+  async function deleteParticipant(username) {
+    const ok = window.confirm(
+      `Delete participant "${username}" and all their predictions?\n\n` +
+        'This cannot be undone.',
+    );
+    if (!ok) return;
+    $('#adminSaveStatus').textContent = `Deleting ${username}…`;
+    try {
+      state = await API.deletePrediction(username);
+      renderAll();
+      renderAdminPanel();
+      $('#adminSaveStatus').textContent = `🗑️ ${username} deleted`;
     } catch (e) {
       $('#adminSaveStatus').textContent = '❌ ' + e.message;
     }
