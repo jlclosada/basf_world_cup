@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Porra Mundial 2026 ⚽</title>
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand">
+        <span class="ball">⚽</span>
+        <div>
+          <h1 id="title">Porra Mundial 2026</h1>
+          <p class="subtitle" id="subtitle">La porra de la oficina</p>
+        </div>
+      </div>
+      <div class="user-box">
+        <span id="userLabel" class="user-label hidden"></span>
+        <button id="changeUserBtn" class="btn ghost hidden">Cambiar</button>
+      </div>
+    </header>
+
+    <!-- Pantalla de acceso -->
+    <section id="loginScreen" class="login">
+      <div class="card login-card">
+        <h2>👋 Bienvenido a la porra</h2>
+        <p>
+          Escribe tu nombre para empezar. Lo usarás siempre para entrar y ver
+          tus puntos.
+        </p>
+        <input
+          id="usernameInput"
+          type="text"
+          maxlength="24"
+          placeholder="Tu nombre (p. ej. Laura G.)"
+        />
+        <button id="enterBtn" class="btn primary">Entrar</button>
+        <p class="hint" id="loginHint"></p>
+      </div>
+    </section>
+
+    <!-- App principal -->
+    <main id="app" class="hidden">
+      <nav class="tabs">
+        <button class="tab active" data-tab="predicciones">
+          📝 Mis predicciones
+        </button>
+        <button class="tab" data-tab="clasificacion">📊 Clasificación</button>
+        <button class="tab" data-tab="reglas">📖 Reglas</button>
+        <button class="tab" data-tab="admin">🔒 Resultados (admin)</button>
+      </nav>
+
+      <div id="banner" class="banner hidden"></div>
+
+      <!-- TAB: Predicciones -->
+      <section id="tab-predicciones" class="tab-panel active">
+        <div class="panel-toolbar">
+          <div class="subtabs" id="predSubtabs">
+            <button class="subtab active" data-sub="grupos">
+              Partidos de grupos
+            </button>
+            <button class="subtab" data-sub="tablas">
+              Clasificación grupos
+            </button>
+            <button class="subtab" data-sub="bracket">
+              Campeón y goleadores
+            </button>
+            <button class="subtab" data-sub="eliminatorias">
+              Eliminatorias
+            </button>
+          </div>
+          <div class="save-bar">
+            <span id="saveStatus" class="save-status"></span>
+            <button id="savePredBtn" class="btn primary">💾 Guardar</button>
+          </div>
+        </div>
+
+        <div id="sub-grupos" class="subpanel active"></div>
+        <div id="sub-tablas" class="subpanel"></div>
+        <div id="sub-bracket" class="subpanel"></div>
+        <div id="sub-eliminatorias" class="subpanel"></div>
+      </section>
+
+      <!-- TAB: Clasificación -->
+      <section id="tab-clasificacion" class="tab-panel">
+        <div id="leaderboard"></div>
+      </section>
+
+      <!-- TAB: Reglas -->
+      <section id="tab-reglas" class="tab-panel">
+        <div id="rules"></div>
+      </section>
+
+      <!-- TAB: Admin -->
+      <section id="tab-admin" class="tab-panel">
+        <div id="adminPanel"></div>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      <span id="backendInfo"></span>
+    </footer>
+
+    <script src="js/config.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/scoring.js"></script>
+    <script src="js/app.js"></script>
+  </body>
+</html>
