@@ -12,30 +12,30 @@
         <span class="ball">⚽</span>
         <div>
           <h1 id="title">BASF-RG Team World Cup 2026</h1>
-          <p class="subtitle" id="subtitle">La porra de la oficina</p>
+          <p class="subtitle" id="subtitle">The office prediction pool</p>
         </div>
       </div>
       <div class="user-box">
         <span id="userLabel" class="user-label hidden"></span>
-        <button id="changeUserBtn" class="btn ghost hidden">Cambiar</button>
+        <button id="changeUserBtn" class="btn ghost hidden">Change</button>
       </div>
     </header>
 
     <!-- Pantalla de acceso -->
     <section id="loginScreen" class="login">
       <div class="card login-card">
-        <h2>👋 Bienvenido a la porra</h2>
+        <h2>👋 Welcome to the pool</h2>
         <p>
-          Escribe tu nombre para empezar. Lo usarás siempre para entrar y ver
-          tus puntos.
+          Enter your name to get started. You'll use it every time to log in and
+          see your points.
         </p>
         <input
           id="usernameInput"
           type="text"
           maxlength="24"
-          placeholder="Tu nombre (p. ej. Laura G.)"
+          placeholder="Your name (e.g. Laura G.)"
         />
-        <button id="enterBtn" class="btn primary">Entrar</button>
+        <button id="enterBtn" class="btn primary">Enter</button>
         <p class="hint" id="loginHint"></p>
       </div>
     </section>
@@ -44,11 +44,11 @@
     <main id="app" class="hidden">
       <nav class="tabs">
         <button class="tab active" data-tab="predicciones">
-          📝 Mis predicciones
+          📝 My predictions
         </button>
-        <button class="tab" data-tab="clasificacion">📊 Clasificación</button>
-        <button class="tab" data-tab="reglas">📖 Reglas</button>
-        <button class="tab" data-tab="admin">🔒 Resultados (admin)</button>
+        <button class="tab" data-tab="clasificacion">📊 Leaderboard</button>
+        <button class="tab" data-tab="reglas">📖 Rules</button>
+        <button class="tab" data-tab="admin">🔒 Results (admin)</button>
       </nav>
 
       <div id="banner" class="banner hidden"></div>
@@ -58,21 +58,20 @@
         <div class="panel-toolbar">
           <div class="subtabs" id="predSubtabs">
             <button class="subtab active" data-sub="grupos">
-              Partidos de grupos
+              Group matches
             </button>
-            <button class="subtab" data-sub="tablas">
-              Clasificación grupos
-            </button>
+            <button class="subtab" data-sub="tablas">Group standings</button>
             <button class="subtab" data-sub="bracket">
-              Campeón y goleadores
+              Champion &amp; top scorers
             </button>
-            <button class="subtab" data-sub="eliminatorias">
-              Eliminatorias
-            </button>
+            <button class="subtab" data-sub="eliminatorias">Knockouts</button>
           </div>
           <div class="save-bar">
             <span id="saveStatus" class="save-status"></span>
-            <button id="savePredBtn" class="btn primary">💾 Guardar</button>
+            <button id="resetPredBtn" class="btn ghost small">
+              🗑️ Clear my predictions
+            </button>
+            <button id="savePredBtn" class="btn primary">💾 Save</button>
           </div>
         </div>
 

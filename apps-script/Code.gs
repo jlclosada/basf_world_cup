@@ -45,6 +45,16 @@ function doPost(e) {
         return json({ error: 'Clave de admin incorrecta' });
       }
       setStateBlob({ results: body.results || {}, locks: body.locks || {} });
+    } else if (body.action === 'deletePrediction') {
+      if (!body.username || typeof body.username !== 'string') {
+        return json({ error: 'Falta usuario' });
+      }
+      deletePrediction(body.username.trim().slice(0, 40));
+    } else if (body.action === 'resetAll') {
+      if (body.adminCode !== ADMIN_CODE) {
+        return json({ error: 'Clave de admin incorrecta' });
+      }
+      resetAll();
     } else {
       return json({ error: 'Acción desconocida' });
     }
@@ -118,6 +128,27 @@ function upsertPrediction(username, prediction) {
     }
   }
   sh.appendRow([username, now, payload]);
+}
+
+// Borra la fila de predicciones de un usuario.
+function deletePrediction(username) {
+  const sh = getPredSheet();
+  const data = sh.getDataRange().getValues();
+  for (let i = data.length - 1; i >= 1; i--) {
+    if (data[i][0] === username) {
+      sh.deleteRow(i + 1);
+    }
+  }
+}
+
+// Borra todo: vacía la hoja de predicciones (deja la cabecera) y el estado.
+function resetAll() {
+  const sh = getPredSheet();
+  const last = sh.getLastRow();
+  if (last > 1) {
+    sh.deleteRows(2, last - 1);
+  }
+  getStateSheet().getRange('A1').setValue('');
 }
 
 function setStateBlob(blob) {

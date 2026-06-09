@@ -100,5 +100,35 @@ const API = (function () {
     return state;
   }
 
-  return { load, savePrediction, saveResults, emptyState };
+  // Borra las predicciones de un solo usuario.
+  async function deletePrediction(username) {
+    if (MODE === 'sheets') {
+      return sheetsPost({ action: 'deletePrediction', username });
+    }
+    const state = localLoad();
+    delete state.predictions[username];
+    localSaveAll(state);
+    return state;
+  }
+
+  // Borra TODO (predicciones + resultados). Solo admin.
+  async function resetAll(adminCode) {
+    if (MODE === 'sheets') {
+      return sheetsPost({ action: 'resetAll', adminCode });
+    }
+    if (adminCode !== WC_CONFIG.adminCode)
+      throw new Error('Clave de admin incorrecta');
+    const state = emptyState();
+    localSaveAll(state);
+    return state;
+  }
+
+  return {
+    load,
+    savePrediction,
+    saveResults,
+    deletePrediction,
+    resetAll,
+    emptyState,
+  };
 })();
