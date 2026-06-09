@@ -26,6 +26,111 @@ const App = (function () {
   WC_CONFIG.allTeams.forEach((t) => (flagMap[t.name] = t.flag));
   const flagOf = (name) => flagMap[name] || '🏳️';
 
+  // Formatea "2026-06-11" -> "jue 11 jun".
+  const DOW = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
+  const MON = [
+    'ene',
+    'feb',
+    'mar',
+    'abr',
+    'may',
+    'jun',
+    'jul',
+    'ago',
+    'sep',
+    'oct',
+    'nov',
+    'dic',
+  ];
+  function fmtDate(iso) {
+    if (!iso) return '';
+    const [y, m, d] = iso.split('-').map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    return `${DOW[dt.getUTCDay()]} ${d} ${MON[m - 1]}`;
+  }
+
+  // --- Horarios y bloqueo por partido ---
+  // Las horas del calendario son del Este de EE. UU. (EDT = UTC-4 en jun/jul).
+  // El bloqueo se cierra 1 h antes del inicio (instante absoluto).
+  const ET_OFFSET = 4; // horas que hay que SUMAR a ET para obtener UTC en verano
+  const LOCK_MS = 60 * 60 * 1000; // 1 hora
+
+  // Devuelve el instante (ms UTC) del inicio del partido, o null si no hay hora.
+  function kickoffMs(m) {
+    if (!m.date || !m.time) return null;
+    const [y, mo, d] = m.date.split('-').map(Number);
+    const [hh, mm] = m.time.split(':').map(Number);
+    return Date.UTC(y, mo - 1, d, hh + ET_OFFSET, mm);
+  }
+
+  // Hora del partido en horario de España (Europe/Madrid), p. ej. "21:00".
+  function spainTime(m) {
+    const ms = kickoffMs(m);
+    if (ms == null) return '';
+    try {
+      return new Intl.DateTimeFormat('es-ES', {
+        timeZone: 'Europe/Madrid',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(new Date(ms));
+    } catch (e) {
+      return m.time;
+    }
+  }
+
+  // Hora límite de edición (1 h antes) en horario de España.
+  function deadlineSpainTime(m) {
+    const ms = kickoffMs(m);
+    if (ms == null) return '';
+    try {
+      return new Intl.DateTimeFormat('es-ES', {
+        timeZone: 'Europe/Madrid',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(new Date(ms - LOCK_MS));
+    } catch (e) {
+      return '';
+    }
+  }
+
+  // ¿Está cerrada la edición de este partido para los participantes?
+  function matchClosed(m) {
+    const ms = kickoffMs(m);
+    if (ms == null) return false;
+    return Date.now() >= ms - LOCK_MS;
+  }
+
+  // Línea de metadatos de un partido (fecha · hora España · sede · cierre).
+  function matchMeta(m, showLock) {
+    const parts = [];
+    if (m.date) parts.push('📅 ' + fmtDate(m.date));
+    const st = spainTime(m);
+    if (st) parts.push('⏰ ' + st + ' (España)');
+    else if (m.time) parts.push('⏰ ' + m.time);
+    if (m.venue) parts.push('📍 ' + esc(m.venue));
+    let lockHtml = '';
+    if (showLock && kickoffMs(m) != null) {
+      lockHtml = matchClosed(m)
+        ? `<span class="lock-tag closed">🔒 cerrado</span>`
+        : `<span class="lock-tag open">✏️ editable hasta ${deadlineSpainTime(m)}</span>`;
+    }
+    if (!parts.length && !lockHtml) return '';
+    return `<div class="match-meta">${parts.join(' · ')}${lockHtml}</div>`;
+  }
+
+  // Cuadro de eliminatorias: fixtures de config + nombres reales que el
+  // organizador haya rellenado (state.results.koTeams[id] = {home, away}).
+  function koMatchList() {
+    const overrides = state.results.koTeams || {};
+    return WC_CONFIG.koFixtures.map((m) => {
+      const o = overrides[m.id] || {};
+      return Object.assign({}, m, {
+        home: o.home || m.home,
+        away: o.away || m.away,
+      });
+    });
+  }
+
   function emptyPrediction(username) {
     const gs = {};
     Object.keys(WC_CONFIG.groups).forEach(
@@ -193,13 +298,9 @@ const App = (function () {
     let html = '';
     Object.keys(byGroup).forEach((g) => {
       html += `<div class="group-block"><h3 class="group-title">Grupo ${g}</h3>`;
-      let lastDay = 0;
       byGroup[g].forEach((m) => {
-        if (m.matchday !== lastDay) {
-          html += `<div class="matchday-tag">Jornada ${m.matchday}</div>`;
-          lastDay = m.matchday;
-        }
         const p = pred.groupMatches[m.id] || { home: '', away: '' };
+        const closed = locked || matchClosed(m);
         const badge = matchBadge(
           p,
           rgm[m.id],
@@ -207,12 +308,13 @@ const App = (function () {
           WC_CONFIG.scoring.outcome,
         );
         html += `
-          <div class="match">
+          ${matchMeta(m, true)}
+          <div class="match${closed ? ' closed' : ''}">
             <div class="team home"><span class="flag">${flagOf(m.home)}</span><span class="name">${esc(m.home)}</span></div>
             <div class="score">
-              <input type="number" min="0" max="30" data-mid="${m.id}" data-side="home" value="${p.home}" ${locked ? 'disabled' : ''}/>
+              <input type="number" min="0" max="30" data-mid="${m.id}" data-side="home" value="${p.home}" ${closed ? 'disabled' : ''}/>
               <span class="dash">–</span>
-              <input type="number" min="0" max="30" data-mid="${m.id}" data-side="away" value="${p.away}" ${locked ? 'disabled' : ''}/>
+              <input type="number" min="0" max="30" data-mid="${m.id}" data-side="away" value="${p.away}" ${closed ? 'disabled' : ''}/>
             </div>
             <div class="team away"><span class="name">${esc(m.away)}</span><span class="flag">${flagOf(m.away)}</span></div>
           </div>
@@ -235,11 +337,15 @@ const App = (function () {
   function renderStandings() {
     const pred = myPrediction();
     const locked = state.locks.groups;
-    let html = `<p class="hint">Ordena cada grupo del 1º al 4º. Los dos primeros pasan directos (y los mejores terceros). ${WC_CONFIG.scoring.groupPos} pts por cada posición acertada.</p>`;
+    let html = `<p class="hint">Ordena cada grupo del 1º al 4º. Los dos primeros pasan directos (y los mejores terceros). ${WC_CONFIG.scoring.groupPos} pts por cada posición acertada. La columna «Real» se actualiza sola con los resultados que mete el organizador.</p>`;
     Object.keys(WC_CONFIG.groups).forEach((g) => {
       const teams = WC_CONFIG.groups[g];
       const order = pred.groupStandings[g] || teams.map((t) => t.name);
-      html += `<div class="card standings-card"><h3 class="group-title">Grupo ${g}</h3>`;
+      const live = Scoring.groupTable(g, state.results);
+      html += `<div class="card standings-card"><h3 class="group-title">Grupo ${g}</h3>
+        <div class="standings-split">
+          <div class="standings-col">
+            <div class="col-head">Tu predicción</div>`;
       for (let pos = 0; pos < 4; pos++) {
         const qual = pos < 2 ? 'q' : '';
         html += `<div class="pos-row"><div class="pos-num ${qual}">${pos + 1}º</div>
@@ -252,9 +358,27 @@ const App = (function () {
               .join('')}
           </select></div>`;
       }
-      html += `</div>`;
+      html += `</div><div class="standings-col">
+            <div class="col-head">Real ${live.complete ? '✅' : '(en vivo)'}</div>
+            ${liveStandingsHtml(live)}
+          </div></div></div>`;
     });
     $('#sub-tablas').innerHTML = html;
+  }
+
+  // Mini-tabla de clasificación real (PJ, GF-GC, DG, Pts).
+  function liveStandingsHtml(live) {
+    const rows = live.table
+      .map((s, i) => {
+        const qual = i < 2 ? 'q' : '';
+        const empty = s.pj === 0;
+        return `<div class="pos-row live"><div class="pos-num ${qual}">${i + 1}º</div>
+          <div class="live-team">${flagOf(s.team)} ${esc(s.team)}
+            <span class="live-stats">${empty ? '—' : `${s.pj}PJ · ${s.gf}-${s.ga} · ${s.gd >= 0 ? '+' : ''}${s.gd} · <b>${s.pts}pts</b>`}</span>
+          </div></div>`;
+      })
+      .join('');
+    return rows;
   }
 
   // ---------- Predicciones: campeón + goleadores ----------
@@ -310,24 +434,26 @@ const App = (function () {
     const ko = state.results.knockout;
     const locked = state.locks.knockout;
     const rko = state.results.koMatches || {};
+    const matches = koMatchList();
 
-    if (!ko.active || !ko.matches.length) {
+    if (!ko.active) {
       $('#sub-eliminatorias').innerHTML = `<div class="card admin-locked">
         <h3>⏳ Eliminatorias aún no disponibles</h3>
-        <p class="hint">Cuando termine la fase de grupos, el organizador activará el «modo eliminatoria» y aquí aparecerán los cruces para que metas tus resultados.</p></div>`;
+        <p class="hint">Cuando termine la fase de grupos, el organizador activará el «modo eliminatoria» y aquí aparecerán los 32 cruces (con sus slots, p. ej. «1º Grupo A») para que metas tus resultados.</p></div>`;
       return;
     }
 
     const sc = WC_CONFIG.scoring;
     let html = `<p class="hint">Mete el resultado de cada cruce (marcador a los 90'). ${sc.koExact} pts exacto · ${sc.koOutcome} pts por acertar quién pasa.</p>`;
     WC_CONFIG.koRounds.forEach((r) => {
-      const ms = ko.matches.filter((m) => m.round === r.id);
+      const ms = matches.filter((m) => m.round === r.id);
       if (!ms.length) return;
       html += `<div class="group-block"><h3 class="group-title">${r.name}</h3>`;
       ms.forEach((m) => {
         const p = pred.koMatches[m.id] || { home: '', away: '' };
         const badge = matchBadge(p, rko[m.id], sc.koExact, sc.koOutcome);
         html += `
+          ${matchMeta(m)}
           <div class="match">
             <div class="team home"><span class="flag">${flagOf(m.home)}</span><span class="name">${esc(m.home)}</span></div>
             <div class="score">
@@ -346,12 +472,20 @@ const App = (function () {
   // ---------- Recolectar y guardar predicción ----------
   function collectPrediction() {
     const pred = emptyPrediction(currentUser);
+    const prev = myPrediction(); // valores ya guardados (para partidos cerrados)
+    const closedById = {};
+    WC_CONFIG.groupMatches.forEach((m) => (closedById[m.id] = matchClosed(m)));
 
     $$('#sub-grupos input[data-mid]').forEach((inp) => {
       const id = inp.dataset.mid,
         side = inp.dataset.side;
       pred.groupMatches[id] = pred.groupMatches[id] || { home: '', away: '' };
-      pred.groupMatches[id][side] = inp.value === '' ? '' : +inp.value;
+      // Si el partido ya está cerrado, conserva lo guardado (no se sobrescribe).
+      if (closedById[id] && prev.groupMatches[id]) {
+        pred.groupMatches[id][side] = prev.groupMatches[id][side];
+      } else {
+        pred.groupMatches[id][side] = inp.value === '' ? '' : +inp.value;
+      }
     });
 
     Object.keys(WC_CONFIG.groups).forEach((g) => (pred.groupStandings[g] = []));
@@ -523,7 +657,7 @@ const App = (function () {
       groupsHtml += `<h4 class="group-title">Grupo ${g}</h4>`;
       byGroup[g].forEach((m) => {
         const res = (r.groupMatches || {})[m.id] || { home: '', away: '' };
-        groupsHtml += `<div class="match">
+        groupsHtml += `${matchMeta(m)}<div class="match">
           <div class="team home"><span class="flag">${flagOf(m.home)}</span><span class="name">${esc(m.home)}</span></div>
           <div class="score">
             <input type="number" min="0" data-rmid="${m.id}" data-side="home" value="${res.home}"/>
@@ -535,19 +669,27 @@ const App = (function () {
       });
     });
 
-    // Clasificación final de grupos
+    // Clasificación de grupos: se calcula automáticamente desde los
+    // resultados. El admin solo necesita un override manual para desempates.
     let standHtml = '';
     Object.keys(WC_CONFIG.groups).forEach((g) => {
       const teams = WC_CONFIG.groups[g];
-      const order = (r.groupStandings || {})[g] || teams.map((t) => t.name);
-      standHtml += `<div class="card standings-card"><h4 class="group-title">Grupo ${g}</h4>`;
+      const live = Scoring.groupTable(g, r);
+      const manual = (r.groupStandings || {})[g] || [];
+      const hasManual = manual.length === 4 && manual.every(Boolean);
+      // El select se prerellena con el override manual o con el orden auto.
+      const order = hasManual ? manual : live.order;
+      standHtml += `<div class="card standings-card"><h4 class="group-title">Grupo ${g} ${live.complete ? '✅ completo' : '(en vivo)'}</h4>
+        <div class="live-auto">${liveStandingsHtml(live)}</div>
+        <details class="override"><summary>✏️ Ajustar orden manual (solo para desempates oficiales)</summary>`;
       for (let pos = 0; pos < 4; pos++) {
         standHtml += `<div class="pos-row"><div class="pos-num ${pos < 2 ? 'q' : ''}">${pos + 1}º</div>
           <select data-rgroup="${g}" data-pos="${pos}">
-            ${teams.map((t) => `<option value="${esc(t.name)}" ${order[pos] === t.name ? 'selected' : ''}>${t.flag} ${esc(t.name)}</option>`).join('')}
+            <option value="">— auto —</option>
+            ${teams.map((t) => `<option value="${esc(t.name)}" ${hasManual && order[pos] === t.name ? 'selected' : ''}>${t.flag} ${esc(t.name)}</option>`).join('')}
           </select></div>`;
       }
-      standHtml += `</div>`;
+      standHtml += `</details></div>`;
     });
 
     // Goleadores
@@ -569,30 +711,29 @@ const App = (function () {
         <div class="field"><label>Semifinalista 2 (eliminado en semis)</label><select id="res-semi-1">${opts((b.semifinalists || [])[1])}</select></div>
       </div>`;
 
-    // Constructor de eliminatorias
-    const koMatches = (r.knockout && r.knockout.matches) || [];
-    let koListHtml = koMatches
-      .map((m) => {
+    // Cuadro de eliminatorias (predefinido). El admin rellena el nombre real
+    // de cada equipo (sustituyendo el slot) y el resultado.
+    const koTeams = r.koTeams || {};
+    let koListHtml = '';
+    WC_CONFIG.koRounds.forEach((round) => {
+      const ms = WC_CONFIG.koFixtures.filter((m) => m.round === round.id);
+      if (!ms.length) return;
+      koListHtml += `<h4 class="group-title">${round.name}</h4>`;
+      ms.forEach((m) => {
         const res = (r.koMatches || {})[m.id] || { home: '', away: '' };
-        const rname =
-          (WC_CONFIG.koRounds.find((x) => x.id === m.round) || {}).name ||
-          m.round;
-        return `<div class="match" data-koitem="${m.id}">
-          <div class="team home"><span class="flag">${flagOf(m.home)}</span><span class="name">${esc(m.home)} <small style="color:var(--muted)">(${rname})</small></span></div>
+        const ov = koTeams[m.id] || {};
+        koListHtml += `${matchMeta(m)}<div class="ko-admin-row">
+          <input type="text" class="ko-team" list="teamlist" data-koteam="${m.id}" data-side="home" placeholder="${esc(m.home)}" value="${esc(ov.home || '')}"/>
           <div class="score">
             <input type="number" min="0" data-rkoid="${m.id}" data-side="home" value="${res.home}"/>
             <span class="dash">–</span>
             <input type="number" min="0" data-rkoid="${m.id}" data-side="away" value="${res.away}"/>
           </div>
-          <div class="team away"><span class="name">${esc(m.away)}</span><span class="flag">${flagOf(m.away)}</span>
-            <button class="btn small danger" data-removeko="${m.id}" style="margin-left:8px">✕</button></div>
+          <input type="text" class="ko-team" list="teamlist" data-koteam="${m.id}" data-side="away" placeholder="${esc(m.away)}" value="${esc(ov.away || '')}"/>
         </div>`;
-      })
-      .join('');
+      });
+    });
 
-    const roundOpts = WC_CONFIG.koRounds
-      .map((r) => `<option value="${r.id}">${r.name}</option>`)
-      .join('');
     const teamList = WC_CONFIG.allTeams
       .map((t) => `<option value="${esc(t.name)}">`)
       .join('');
@@ -610,20 +751,14 @@ const App = (function () {
       </div>
 
       <div class="card admin-section">
-        <h3>🏟️ Cruces de eliminatoria</h3>
-        <p class="hint">Añade cada cruce cuando se conozca. Aparecerán a los participantes para que predigan.</p>
-        <div class="ko-builder">
-          <select id="koRound">${roundOpts}</select>
-          <input type="text" id="koHome" list="teamlist" placeholder="Local"/>
-          <input type="text" id="koAway" list="teamlist" placeholder="Visitante"/>
-          <button id="addKoBtn" class="btn small primary">+ Añadir</button>
-        </div>
+        <h3>🏟️ Cuadro de eliminatorias</h3>
+        <p class="hint">Los 32 cruces ya están cargados con sus slots (p. ej. «1º Grupo A»). A medida que se conozcan, escribe el equipo real en cada casilla (déjalo vacío para mantener el slot) y mete el resultado.</p>
         <datalist id="teamlist">${teamList}</datalist>
-        <div id="koList">${koListHtml || '<p class="hint">Sin cruces todavía.</p>'}</div>
+        <div id="koList">${koListHtml}</div>
       </div>
 
       <div class="card admin-section"><h3>⚽ Resultados de grupos</h3>${groupsHtml}</div>
-      <div class="card admin-section"><h3>📋 Clasificación final de grupos</h3>${standHtml}</div>
+      <div class="card admin-section"><h3>📋 Clasificación de grupos (automática)</h3><p class="hint">Se calcula sola con los resultados. Solo usa el ajuste manual si necesitas corregir un desempate oficial de la FIFA.</p>${standHtml}</div>
       <div class="card admin-section"><h3>👟 Goleadores oficiales</h3>${scorersHtml}</div>
       <div class="card admin-section"><h3>🏆 Bracket oficial</h3>${bracketHtml}</div>
 
@@ -636,35 +771,6 @@ const App = (function () {
   }
 
   function bindAdminEvents() {
-    $('#addKoBtn').addEventListener('click', () => {
-      const round = $('#koRound').value;
-      const home = $('#koHome').value.trim();
-      const away = $('#koAway').value.trim();
-      if (!home || !away) return;
-      const matches = state.results.knockout.matches;
-      const id =
-        'K-' +
-        round +
-        '-' +
-        (matches.filter((m) => m.round === round).length + 1) +
-        '-' +
-        Date.now().toString(36);
-      matches.push({ id, round, home, away });
-      state.results.knockout.active = true;
-      renderAdminPanel();
-    });
-
-    $$('[data-removeko]').forEach((btn) =>
-      btn.addEventListener('click', () => {
-        const id = btn.dataset.removeko;
-        state.results.knockout.matches = state.results.knockout.matches.filter(
-          (m) => m.id !== id,
-        );
-        delete state.results.koMatches[id];
-        renderAdminPanel();
-      }),
-    );
-
     $('#saveResultsBtn').addEventListener('click', saveResults);
   }
 
@@ -698,6 +804,20 @@ const App = (function () {
         side = inp.dataset.side;
       r.koMatches[id] = r.koMatches[id] || { home: '', away: '' };
       r.koMatches[id][side] = inp.value === '' ? '' : +inp.value;
+    });
+
+    // Nombres reales de los equipos en los cruces (sustituyen al slot).
+    r.koTeams = r.koTeams || {};
+    $$('[data-koteam]').forEach((inp) => {
+      const id = inp.dataset.koteam,
+        side = inp.dataset.side,
+        val = inp.value.trim();
+      if (val) {
+        r.koTeams[id] = r.koTeams[id] || {};
+        r.koTeams[id][side] = val;
+      } else if (r.koTeams[id]) {
+        delete r.koTeams[id][side];
+      }
     });
 
     r.knockout.active = $('#koActive').checked;

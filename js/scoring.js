@@ -27,6 +27,75 @@ const Scoring = (function () {
     return 0;
   }
 
+  // Calcula la clasificación de un grupo a partir de los resultados reales.
+  // Devuelve { order: [nombres ordenados], complete: bool, table: [...] }.
+  // Desempate: puntos > diferencia de goles > goles a favor > alfabético.
+  function groupTable(group, results) {
+    const teams = WC_CONFIG.groups[group].map((t) => t.name);
+    const st = {};
+    teams.forEach((n) => {
+      st[n] = { team: n, pj: 0, pts: 0, gf: 0, ga: 0, gd: 0, w: 0, d: 0, l: 0 };
+    });
+    const rgm = (results && results.groupMatches) || {};
+    let played = 0;
+    WC_CONFIG.groupMatches
+      .filter((m) => m.group === group)
+      .forEach((m) => {
+        const r = rgm[m.id];
+        if (!hasScore(r)) return;
+        const h = +r.home,
+          a = +r.away,
+          sh = st[m.home],
+          sa = st[m.away];
+        if (!sh || !sa) return;
+        played++;
+        sh.pj++;
+        sa.pj++;
+        sh.gf += h;
+        sh.ga += a;
+        sa.gf += a;
+        sa.ga += h;
+        if (h > a) {
+          sh.pts += 3;
+          sh.w++;
+          sa.l++;
+        } else if (h < a) {
+          sa.pts += 3;
+          sa.w++;
+          sh.l++;
+        } else {
+          sh.pts++;
+          sa.pts++;
+          sh.d++;
+          sa.d++;
+        }
+      });
+    const table = Object.values(st);
+    table.forEach((s) => (s.gd = s.gf - s.ga));
+    table.sort(
+      (x, y) =>
+        y.pts - x.pts ||
+        y.gd - x.gd ||
+        y.gf - x.gf ||
+        x.team.localeCompare(y.team),
+    );
+    return {
+      table,
+      order: table.map((s) => s.team),
+      complete: played === 6, // 6 partidos por grupo
+    };
+  }
+
+  // Orden real de un grupo para puntuar: usa el override manual del admin si
+  // está completo (4 equipos); si no, el calculado automáticamente cuando el
+  // grupo ya ha terminado. Devuelve null si aún no se puede puntuar.
+  function realGroupOrder(group, results) {
+    const manual = ((results && results.groupStandings) || {})[group] || [];
+    if (manual.length === 4 && manual.every(Boolean)) return manual;
+    const t = groupTable(group, results);
+    return t.complete ? t.order : null;
+  }
+
   // Calcula el desglose completo de una predicción.
   function score(prediction, results) {
     prediction = prediction || {};
@@ -53,11 +122,13 @@ const Scoring = (function () {
     });
 
     // --- Clasificación de grupos (por posición) ---
+    // El orden real se calcula automáticamente desde los resultados (o el
+    // override manual del admin). Solo puntúa cuando el grupo ha terminado.
     const pgs = prediction.groupStandings || {};
-    const rgs = results.groupStandings || {};
     Object.keys(WC_CONFIG.groups).forEach((g) => {
       const pred = pgs[g] || [];
-      const real = rgs[g] || [];
+      const real = realGroupOrder(g, results);
+      if (!real) return;
       for (let i = 0; i < 4; i++) {
         if (pred[i] && real[i] && norm(pred[i]) === norm(real[i])) {
           b.groupStandings += S.groupPos;
@@ -91,10 +162,11 @@ const Scoring = (function () {
     // --- Partidos de eliminatoria ---
     const pko = prediction.koMatches || {};
     const rko = results.koMatches || {};
-    (results.knockout && results.knockout.matches
-      ? results.knockout.matches
-      : []
-    ).forEach((m) => {
+    const koList =
+      WC_CONFIG.koFixtures && WC_CONFIG.koFixtures.length
+        ? WC_CONFIG.koFixtures
+        : (results.knockout && results.knockout.matches) || [];
+    koList.forEach((m) => {
       const pts = matchPoints(pko[m.id], rko[m.id], S.koExact, S.koOutcome);
       b.koMatches += pts;
       if (pts === S.koExact) b.exactCount++;
@@ -134,5 +206,5 @@ const Scoring = (function () {
     return rows;
   }
 
-  return { score, leaderboard, matchPoints };
+  return { score, leaderboard, matchPoints, groupTable, realGroupOrder };
 })();

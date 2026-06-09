@@ -27,6 +27,7 @@ const API = (function () {
         topScorers: [],
         bracket: { champion: '', finalist: '', semifinalists: ['', ''] },
         koMatches: {},
+        koTeams: {},
         knockout: { active: false, matches: [] },
       },
       locks: { groups: false, knockout: false },
