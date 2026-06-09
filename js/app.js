@@ -5,6 +5,7 @@
 const App = (function () {
   let state = API.emptyState();
   let currentUser = null;
+  let currentPin = null;
 
   // ---------- Utilidades ----------
   const $ = (sel) => document.querySelector(sel);
@@ -269,9 +270,18 @@ const App = (function () {
     await reload();
 
     const saved = localStorage.getItem('wc2026_user');
-    if (saved) {
-      currentUser = saved;
-      showApp();
+    const savedPin = localStorage.getItem('wc2026_pin');
+    if (saved && savedPin) {
+      try {
+        state = await API.login(saved, savedPin);
+        currentUser = saved;
+        currentPin = savedPin;
+        showApp();
+      } catch (e) {
+        // PIN cambiado por el admin o cuenta eliminada: volver al login.
+        localStorage.removeItem('wc2026_user');
+        localStorage.removeItem('wc2026_pin');
+      }
     }
   }
 
@@ -287,11 +297,17 @@ const App = (function () {
   function bindGlobalEvents() {
     $('#enterBtn').addEventListener('click', doLogin);
     $('#usernameInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') $('#pinInput').focus();
+    });
+    $('#pinInput').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') doLogin();
     });
     $('#changeUserBtn').addEventListener('click', () => {
       localStorage.removeItem('wc2026_user');
+      localStorage.removeItem('wc2026_pin');
       currentUser = null;
+      currentPin = null;
+      $('#pinInput').value = '';
       $('#app').classList.add('hidden');
       $('#loginScreen').classList.remove('hidden');
       $('#userLabel').classList.add('hidden');
@@ -322,15 +338,33 @@ const App = (function () {
     });
   }
 
-  function doLogin() {
+  async function doLogin() {
     const name = $('#usernameInput').value.trim();
+    const pin = $('#pinInput').value.trim();
     if (name.length < 2) {
       $('#loginHint').textContent = 'Enter a name with at least 2 characters.';
       return;
     }
-    currentUser = name;
-    localStorage.setItem('wc2026_user', name);
-    showApp();
+    if (!/^\d{4,8}$/.test(pin)) {
+      $('#loginHint').textContent = 'The PIN must be 4 to 8 digits.';
+      return;
+    }
+    $('#enterBtn').disabled = true;
+    $('#loginHint').textContent = 'Checking…';
+    try {
+      state = await API.login(name, pin);
+      currentUser = name;
+      currentPin = pin;
+      localStorage.setItem('wc2026_user', name);
+      localStorage.setItem('wc2026_pin', pin);
+      $('#loginHint').textContent = '';
+      $('#pinInput').value = '';
+      showApp();
+    } catch (e) {
+      $('#loginHint').textContent = '❌ ' + e.message;
+    } finally {
+      $('#enterBtn').disabled = false;
+    }
   }
 
   function showApp() {
@@ -641,7 +675,7 @@ const App = (function () {
     $('#saveStatus').textContent = 'Saving…';
     $('#savePredBtn').disabled = true;
     try {
-      state = await API.savePrediction(currentUser, pred);
+      state = await API.savePrediction(currentUser, pred, currentPin);
       $('#saveStatus').textContent =
         '✅ Saved ' + new Date().toLocaleTimeString();
     } catch (e) {
@@ -673,7 +707,7 @@ const App = (function () {
     $('#saveStatus').textContent = 'Deleting…';
     $('#resetPredBtn').disabled = true;
     try {
-      state = await API.deletePrediction(currentUser);
+      state = await API.deletePrediction(currentUser, { pin: currentPin });
       renderAll();
       $('#saveStatus').textContent = '🗑️ Predictions deleted';
     } catch (e) {
@@ -762,6 +796,16 @@ const App = (function () {
 
   // ---------- Admin ----------
   let adminUnlocked = false;
+  let adminUsers = []; // [{username, pin}] cargado solo para el admin
+
+  async function refreshAdminUsers() {
+    try {
+      adminUsers = await API.adminGetUsers(WC_CONFIG.adminCode);
+    } catch (e) {
+      adminUsers = [];
+    }
+  }
+
   function renderAdmin() {
     if (!adminUnlocked) {
       $('#adminPanel').innerHTML = `<div class="card admin-locked">
@@ -770,9 +814,11 @@ const App = (function () {
         <input type="password" id="adminCodeInput" placeholder="Admin code"/>
         <button id="adminUnlockBtn" class="btn primary">Enter</button>
         <p class="hint" id="adminMsg"></p></div>`;
-      $('#adminUnlockBtn').addEventListener('click', () => {
+      $('#adminUnlockBtn').addEventListener('click', async () => {
         if ($('#adminCodeInput').value === WC_CONFIG.adminCode) {
           adminUnlocked = true;
+          $('#adminMsg').textContent = 'Loading…';
+          await refreshAdminUsers();
           renderAdmin();
         } else {
           $('#adminMsg').textContent = 'Incorrect code.';
@@ -892,22 +938,37 @@ const App = (function () {
       .map((t) => `<option value="${esc(t.name)}">`)
       .join('');
 
-    // Lista de participantes con su número de predicciones, para que el admin
-    // pueda borrar a un jugador concreto (p. ej. usuarios de prueba).
-    const participants = Object.keys(state.predictions || {}).sort((a, b) =>
-      a.localeCompare(b),
-    );
+    // Lista de participantes con su PIN, para que el admin pueda reenviarlo,
+    // resetearlo o borrar a un jugador concreto (p. ej. usuarios de prueba).
+    // Se unen los usuarios registrados (con PIN) y los que tengan predicciones.
+    const pinByUser = {};
+    adminUsers.forEach((u) => (pinByUser[u.username] = u.pin));
+    const participants = Array.from(
+      new Set([
+        ...adminUsers.map((u) => u.username),
+        ...Object.keys(state.predictions || {}),
+      ]),
+    ).sort((a, b) => a.localeCompare(b));
     let participantsHtml;
     if (!participants.length) {
       participantsHtml = `<p class="hint">No participants yet.</p>`;
     } else {
       participantsHtml = `<div class="participants-list">${participants
-        .map(
-          (u) => `<div class="participant-row">
+        .map((u) => {
+          const pin = pinByUser[u];
+          const pinTxt =
+            pin != null && pin !== ''
+              ? `<span class="participant-pin">PIN: <code>${esc(pin)}</code></span>`
+              : `<span class="participant-pin muted">no PIN</span>`;
+          return `<div class="participant-row">
             <span class="participant-name">${esc(u)}</span>
-            <button class="btn danger small" data-deluser="${esc(u)}">🗑️ Delete</button>
-          </div>`,
-        )
+            ${pinTxt}
+            <span class="participant-actions">
+              <button class="btn ghost small" data-resetpin="${esc(u)}">🔑 Reset PIN</button>
+              <button class="btn danger small" data-deluser="${esc(u)}">🗑️ Delete</button>
+            </span>
+          </div>`;
+        })
         .join('')}</div>`;
     }
 
@@ -937,7 +998,7 @@ const App = (function () {
 
       <div class="card admin-section">
         <h3>👥 Participants</h3>
-        <p class="hint">Remove a single participant's predictions (e.g. test users). This only deletes that person, not the official results.</p>
+        <p class="hint">See each participant's PIN (to remind them if they forget), reset it, or delete a participant entirely (e.g. test users). Deleting removes their predictions and account, not the official results.</p>
         ${participantsHtml}
       </div>
 
@@ -956,6 +1017,11 @@ const App = (function () {
     $$('[data-deluser]').forEach((btn) =>
       btn.addEventListener('click', () =>
         deleteParticipant(btn.dataset.deluser),
+      ),
+    );
+    $$('[data-resetpin]').forEach((btn) =>
+      btn.addEventListener('click', () =>
+        resetParticipantPin(btn.dataset.resetpin),
       ),
     );
 
@@ -1086,10 +1152,35 @@ const App = (function () {
     if (!ok) return;
     $('#adminSaveStatus').textContent = `Deleting ${username}…`;
     try {
-      state = await API.deletePrediction(username);
+      state = await API.deletePrediction(username, {
+        adminCode: WC_CONFIG.adminCode,
+      });
+      await refreshAdminUsers();
       renderAll();
       renderAdminPanel();
       $('#adminSaveStatus').textContent = `🗑️ ${username} deleted`;
+    } catch (e) {
+      $('#adminSaveStatus').textContent = '❌ ' + e.message;
+    }
+  }
+
+  // Resetea (fija) el PIN de un participante a un nuevo valor elegido por el admin.
+  async function resetParticipantPin(username) {
+    const pin = window.prompt(`Set a new PIN for "${username}" (4–8 digits):`);
+    if (pin == null) return;
+    if (!/^\d{4,8}$/.test(pin.trim())) {
+      $('#adminSaveStatus').textContent = '❌ The PIN must be 4 to 8 digits.';
+      return;
+    }
+    $('#adminSaveStatus').textContent = `Updating PIN for ${username}…`;
+    try {
+      adminUsers = await API.adminSetPin(
+        username,
+        pin.trim(),
+        WC_CONFIG.adminCode,
+      );
+      renderAdminPanel();
+      $('#adminSaveStatus').textContent = `🔑 PIN updated for ${username}`;
     } catch (e) {
       $('#adminSaveStatus').textContent = '❌ ' + e.message;
     }
@@ -1111,6 +1202,7 @@ const App = (function () {
     $('#adminSaveStatus').textContent = 'Deleting everything…';
     try {
       state = await API.resetAll(WC_CONFIG.adminCode);
+      await refreshAdminUsers();
       renderAll();
       renderAdminPanel();
       $('#adminSaveStatus').textContent = '🗑️ All data deleted';

@@ -26,8 +26,8 @@
       <div class="card login-card">
         <h2>👋 Welcome to the pool</h2>
         <p>
-          Enter your name to get started. You'll use it every time to log in and
-          see your points.
+          Enter your name and a personal PIN. You'll use the same name and PIN
+          every time to log in and see your points.
         </p>
         <input
           id="usernameInput"
@@ -35,8 +35,19 @@
           maxlength="24"
           placeholder="Your name (e.g. Laura G.)"
         />
+        <input
+          id="pinInput"
+          type="password"
+          inputmode="numeric"
+          autocomplete="off"
+          maxlength="8"
+          placeholder="PIN (4–8 digits)"
+        />
         <button id="enterBtn" class="btn primary">Enter</button>
-        <p class="hint" id="loginHint"></p>
+        <p class="hint" id="loginHint">
+          First time? Pick a PIN to protect your predictions. Forgot it? Ask the
+          organizer to look it up for you.
+        </p>
       </div>
     </section>
 

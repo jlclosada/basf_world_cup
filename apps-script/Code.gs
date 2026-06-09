@@ -9,12 +9,14 @@
  *
  * La hoja guarda:
  *   - Pestaña "Predicciones": usuario | actualizado | json
+ *   - Pestaña "Usuarios":     usuario | pin | creado | actualizado
  *   - Pestaña "Estado":       celda A1 con { results, locks } en JSON
  * ============================================================ */
 
 const ADMIN_CODE = 'mundial2026'; // <-- debe coincidir con WC_CONFIG.adminCode
 
 const SHEET_PRED = 'Predicciones';
+const SHEET_USERS = 'Usuarios';
 const SHEET_STATE = 'Estado';
 
 function doGet() {
@@ -32,14 +34,31 @@ function doPost(e) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    if (body.action === 'savePrediction') {
+    if (body.action === 'login') {
+      const username = (body.username || '').toString().trim().slice(0, 40);
+      const pin = (body.pin || '').toString().trim();
+      if (!username) return json({ error: 'Falta usuario' });
+      if (!/^\d{4,8}$/.test(pin))
+        return json({ error: 'El PIN debe tener entre 4 y 8 dígitos' });
+      const existing = getUserPin(username);
+      if (existing === null) {
+        setUserPin(username, pin); // registro nuevo
+        return json(Object.assign({ ok: true, created: true }, getState()));
+      }
+      if (existing !== pin) return json({ error: 'PIN incorrecto' });
+      return json(Object.assign({ ok: true, created: false }, getState()));
+    } else if (body.action === 'savePrediction') {
       if (!body.username || typeof body.username !== 'string') {
         return json({ error: 'Falta usuario' });
       }
-      upsertPrediction(
-        body.username.trim().slice(0, 40),
-        body.prediction || {},
-      );
+      const username = body.username.trim().slice(0, 40);
+      const pin = (body.pin || '').toString().trim();
+      const existing = getUserPin(username);
+      if (existing !== null && existing !== pin) {
+        return json({ error: 'PIN incorrecto' });
+      }
+      if (existing === null) setUserPin(username, pin);
+      upsertPrediction(username, body.prediction || {});
     } else if (body.action === 'saveResults') {
       if (body.adminCode !== ADMIN_CODE) {
         return json({ error: 'Clave de admin incorrecta' });
@@ -49,7 +68,33 @@ function doPost(e) {
       if (!body.username || typeof body.username !== 'string') {
         return json({ error: 'Falta usuario' });
       }
-      deletePrediction(body.username.trim().slice(0, 40));
+      const username = body.username.trim().slice(0, 40);
+      const isAdmin = body.adminCode === ADMIN_CODE;
+      if (!isAdmin) {
+        const existing = getUserPin(username);
+        const pin = (body.pin || '').toString().trim();
+        if (existing !== null && existing !== pin) {
+          return json({ error: 'PIN incorrecto' });
+        }
+      }
+      deletePrediction(username);
+      if (isAdmin) deleteUser(username); // el admin elimina al participante entero
+    } else if (body.action === 'adminGetUsers') {
+      if (body.adminCode !== ADMIN_CODE) {
+        return json({ error: 'Clave de admin incorrecta' });
+      }
+      return json({ ok: true, users: listUsers() });
+    } else if (body.action === 'adminSetPin') {
+      if (body.adminCode !== ADMIN_CODE) {
+        return json({ error: 'Clave de admin incorrecta' });
+      }
+      const username = (body.username || '').toString().trim().slice(0, 40);
+      const pin = (body.pin || '').toString().trim();
+      if (!username) return json({ error: 'Falta usuario' });
+      if (!/^\d{4,8}$/.test(pin))
+        return json({ error: 'El PIN debe tener entre 4 y 8 dígitos' });
+      setUserPin(username, pin);
+      return json({ ok: true, users: listUsers() });
     } else if (body.action === 'resetAll') {
       if (body.adminCode !== ADMIN_CODE) {
         return json({ error: 'Clave de admin incorrecta' });
@@ -85,6 +130,65 @@ function getStateSheet() {
     sh.getRange('A1').setValue('');
   }
   return sh;
+}
+
+function getUsersSheet() {
+  let sh = ss().getSheetByName(SHEET_USERS);
+  if (!sh) {
+    sh = ss().insertSheet(SHEET_USERS);
+    sh.appendRow(['usuario', 'pin', 'creado', 'actualizado']);
+  }
+  return sh;
+}
+
+// Devuelve el PIN (string) de un usuario, o null si no existe.
+function getUserPin(username) {
+  const sh = getUsersSheet();
+  const data = sh.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === username) return ('' + data[i][1]).trim();
+  }
+  return null;
+}
+
+// Crea o actualiza el PIN de un usuario.
+function setUserPin(username, pin) {
+  const sh = getUsersSheet();
+  const data = sh.getDataRange().getValues();
+  const now = new Date().toISOString();
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === username) {
+      sh.getRange(i + 1, 2).setValue(pin);
+      sh.getRange(i + 1, 4).setValue(now);
+      return;
+    }
+  }
+  sh.appendRow([username, pin, now, now]);
+}
+
+// Borra la fila de un usuario de la hoja Usuarios.
+function deleteUser(username) {
+  const sh = getUsersSheet();
+  const data = sh.getDataRange().getValues();
+  for (let i = data.length - 1; i >= 1; i--) {
+    if (data[i][0] === username) sh.deleteRow(i + 1);
+  }
+}
+
+// Lista todos los usuarios con su PIN (solo para uso del admin).
+function listUsers() {
+  const sh = getUsersSheet();
+  const data = sh.getDataRange().getValues();
+  const out = [];
+  for (let i = 1; i < data.length; i++) {
+    if (!data[i][0]) continue;
+    out.push({
+      username: data[i][0],
+      pin: ('' + data[i][1]).trim(),
+      updated: data[i][3] || data[i][2] || '',
+    });
+  }
+  return out;
 }
 
 function getState() {
@@ -147,6 +251,11 @@ function resetAll() {
   const last = sh.getLastRow();
   if (last > 1) {
     sh.deleteRows(2, last - 1);
+  }
+  const us = getUsersSheet();
+  const lastU = us.getLastRow();
+  if (lastU > 1) {
+    us.deleteRows(2, lastU - 1);
   }
   getStateSheet().getRange('A1').setValue('');
 }
