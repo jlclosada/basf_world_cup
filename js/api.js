@@ -73,7 +73,9 @@ const API = (function () {
   async function sheetsGet() {
     const res = await fetch(`${URL}?action=load&t=${Date.now()}`);
     if (!res.ok) throw new Error('No se pudo cargar (GET)');
-    return mergeState(await res.json());
+    const data = await res.json();
+    if (data && data.error) throw new Error(data.error);
+    return mergeState(data);
   }
   async function sheetsPost(payload) {
     const res = await fetch(URL, {
@@ -83,7 +85,11 @@ const API = (function () {
       body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error('No se pudo guardar (POST)');
-    return mergeState(await res.json());
+    const data = await res.json();
+    // El backend devuelve { error } cuando algo falla o la acción no existe
+    // (p. ej. si el Apps Script no está redesplegado con la versión nueva).
+    if (data && data.error) throw new Error(data.error);
+    return mergeState(data);
   }
 
   // ---------- API pública ----------
