@@ -113,22 +113,27 @@ const API = (function () {
     return localLoad();
   }
 
-  async function savePrediction(username, prediction, pin) {
+  async function savePrediction(username, prediction, pin, opts) {
+    opts = opts || {};
     if (MODE === 'sheets') {
       return sheetsPost({
         action: 'savePrediction',
         username,
         prediction,
         pin,
+        adminCode: opts.adminCode,
       });
     }
+    const isAdmin = opts.adminCode === WC_CONFIG.adminCode;
     const pins = localPins();
-    if (pins[username] != null && pins[username] !== pin) {
-      throw new Error('PIN incorrecto');
-    }
-    if (pins[username] == null) {
-      pins[username] = pin;
-      localSavePins(pins);
+    if (!isAdmin) {
+      if (pins[username] != null && pins[username] !== pin) {
+        throw new Error('PIN incorrecto');
+      }
+      if (pins[username] == null) {
+        pins[username] = pin;
+        localSavePins(pins);
+      }
     }
     const state = localLoad();
     state.predictions[username] = prediction;

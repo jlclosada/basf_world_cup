@@ -797,6 +797,7 @@ const App = (function () {
   // ---------- Admin ----------
   let adminUnlocked = false;
   let adminUsers = []; // [{username, pin}] cargado solo para el admin
+  let adminEditUser = null; // participante cuyas predicciones edita el admin
 
   async function refreshAdminUsers() {
     try {
@@ -972,6 +973,19 @@ const App = (function () {
         .join('')}</div>`;
     }
 
+    // Si el participante en edición ya no existe (p. ej. borrado), resetea.
+    if (adminEditUser && !participants.includes(adminEditUser)) {
+      adminEditUser = null;
+    }
+    const editUserOptions =
+      `<option value="">— select participant —</option>` +
+      participants
+        .map(
+          (u) =>
+            `<option value="${esc(u)}" ${adminEditUser === u ? 'selected' : ''}>${esc(u)}</option>`,
+        )
+        .join('');
+
     $('#adminPanel').innerHTML = `
       <div class="card admin-section">
         <h3>⚙️ Locks and knockout mode</h3>
@@ -1002,6 +1016,20 @@ const App = (function () {
         ${participantsHtml}
       </div>
 
+      <div class="card admin-section">
+        <h3>✏️ Edit a participant's predictions</h3>
+        <p class="hint">Fill in or fix the predictions of any participant — including matches already locked or played (e.g. someone who joined the pool late). Changes are saved on their behalf.</p>
+        <div class="field">
+          <label>Participant</label>
+          <select id="adminEditUser">${editUserOptions}</select>
+        </div>
+        <div id="adminEditForm"></div>
+        <div class="save-bar" style="justify-content:flex-end">
+          <span id="adminEditStatus" class="save-status"></span>
+          <button id="saveAdminEditBtn" class="btn primary">💾 Save participant predictions</button>
+        </div>
+      </div>
+
       <div class="save-bar" style="justify-content:flex-end">
         <span id="adminSaveStatus" class="save-status"></span>
         <button id="resetAllBtn" class="btn danger small">🗑️ Delete ALL data</button>
@@ -1024,6 +1052,30 @@ const App = (function () {
         resetParticipantPin(btn.dataset.resetpin),
       ),
     );
+
+    // Edición de las predicciones de un participante por parte del admin.
+    const editSel = $('#adminEditUser');
+    if (editSel) {
+      editSel.addEventListener('change', () => {
+        adminEditUser = editSel.value || null;
+        renderAdminEditForm();
+      });
+    }
+    const saveEditBtn = $('#saveAdminEditBtn');
+    if (saveEditBtn) {
+      saveEditBtn.addEventListener('click', saveAdminEditPrediction);
+    }
+    const editForm = $('#adminEditForm');
+    if (editForm) {
+      // Al cambiar las tablas o un marcador de eliminatoria, recalcula los
+      // equipos del cuadro con la predicción del propio participante.
+      editForm.addEventListener('change', (e) => {
+        if (e.target.matches('[data-aegroup], [data-aekoid]')) {
+          renderAdminEditKo(collectAdminEditPrediction());
+        }
+      });
+    }
+    renderAdminEditForm();
 
     // Al introducir resultados de grupo, ajustar tablas o marcadores de
     // eliminatoria, regenera automáticamente los emparejamientos del cuadro.
@@ -1184,6 +1236,227 @@ const App = (function () {
     } catch (e) {
       $('#adminSaveStatus').textContent = '❌ ' + e.message;
     }
+  }
+
+  // ---------- Admin: editar la predicción de un participante ----------
+  // Renderiza un formulario editable con la predicción del participante
+  // seleccionado. A diferencia del formulario del usuario, el admin puede
+  // editar TODO (partidos ya cerrados o bloqueados incluidos).
+  function renderAdminEditForm() {
+    const container = $('#adminEditForm');
+    if (!container) return;
+    if (!adminEditUser) {
+      container.innerHTML = `<p class="hint">Select a participant above to load and edit their predictions.</p>`;
+      return;
+    }
+
+    const saved = state.predictions[adminEditUser];
+    const pred = saved
+      ? Object.assign(emptyPrediction(adminEditUser), saved)
+      : emptyPrediction(adminEditUser);
+
+    // Partidos de grupos.
+    let groupsHtml = '';
+    const byGroup = {};
+    WC_CONFIG.groupMatches.forEach((m) =>
+      (byGroup[m.group] = byGroup[m.group] || []).push(m),
+    );
+    Object.keys(byGroup).forEach((g) => {
+      groupsHtml += `<h4 class="group-title">Group ${g}</h4>`;
+      byGroup[g].forEach((m) => {
+        const p = pred.groupMatches[m.id] || { home: '', away: '' };
+        groupsHtml += `${matchMeta(m)}<div class="match">
+          <div class="team home"><span class="flag">${flagOf(m.home)}</span><span class="name">${esc(m.home)}</span></div>
+          <div class="score">
+            <input type="number" min="0" max="30" data-aemid="${m.id}" data-side="home" value="${p.home}"/>
+            <span class="dash">–</span>
+            <input type="number" min="0" max="30" data-aemid="${m.id}" data-side="away" value="${p.away}"/>
+          </div>
+          <div class="team away"><span class="name">${esc(m.away)}</span><span class="flag">${flagOf(m.away)}</span></div>
+        </div>`;
+      });
+    });
+
+    // Clasificación de grupos.
+    let standHtml = '';
+    Object.keys(WC_CONFIG.groups).forEach((g) => {
+      const teams = WC_CONFIG.groups[g];
+      const order = pred.groupStandings[g] || teams.map((t) => t.name);
+      standHtml += `<div class="card standings-card"><h4 class="group-title">Group ${g}</h4>`;
+      for (let pos = 0; pos < 4; pos++) {
+        standHtml += `<div class="pos-row"><div class="pos-num ${pos < 2 ? 'q' : ''}">${pos + 1}º</div>
+          <select data-aegroup="${g}" data-pos="${pos}">
+            ${teams
+              .map(
+                (t) =>
+                  `<option value="${esc(t.name)}" ${order[pos] === t.name ? 'selected' : ''}>${t.flag} ${esc(t.name)}</option>`,
+              )
+              .join('')}
+          </select></div>`;
+      }
+      standHtml += `</div>`;
+    });
+
+    // Goleadores.
+    let scorersHtml = '';
+    for (let i = 0; i < WC_CONFIG.topScorerCount; i++) {
+      scorersHtml += `<div class="field"><label>${i + 1}${ordSuffix(i + 1)} scorer</label>
+        <input type="text" data-aescorer="${i}" maxlength="40" value="${esc(pred.topScorers[i] || '')}"/></div>`;
+    }
+
+    // Bracket (campeón, finalista, semifinalistas).
+    const opts = (sel) =>
+      `<option value="">— choose team —</option>` +
+      WC_CONFIG.allTeams
+        .map(
+          (t) =>
+            `<option value="${esc(t.name)}" ${sel === t.name ? 'selected' : ''}>${t.flag} ${esc(t.name)}</option>`,
+        )
+        .join('');
+    const b = pred.bracket || {};
+    const bracketHtml = `
+      <div class="grid2">
+        <div class="field"><label>Champion</label><select id="ae-champion">${opts(b.champion)}</select></div>
+        <div class="field"><label>Runner-up</label><select id="ae-finalist">${opts(b.finalist)}</select></div>
+      </div>
+      <div class="grid2">
+        <div class="field"><label>Semi-finalist 1</label><select id="ae-semi-0">${opts((b.semifinalists || [])[0])}</select></div>
+        <div class="field"><label>Semi-finalist 2</label><select id="ae-semi-1">${opts((b.semifinalists || [])[1])}</select></div>
+      </div>`;
+
+    container.innerHTML = `
+      <div class="admin-edit-section">
+        <h4 class="group-title">⚽ Group matches</h4>${groupsHtml}
+      </div>
+      <div class="admin-edit-section">
+        <h4 class="group-title">📋 Group standings</h4>${standHtml}
+      </div>
+      <div class="admin-edit-section">
+        <h4 class="group-title">👟 Top scorers</h4>${scorersHtml}
+      </div>
+      <div class="admin-edit-section">
+        <h4 class="group-title">🏆 Bracket</h4>${bracketHtml}
+      </div>
+      <div class="admin-edit-section">
+        <h4 class="group-title">🥅 Knockouts</h4>
+        <div id="adminEditKo"></div>
+      </div>`;
+
+    renderAdminEditKo(pred);
+  }
+
+  // Renderiza (o regenera) solo el bloque de eliminatorias del formulario de
+  // edición del admin, resolviendo los equipos con la predicción dada.
+  function renderAdminEditKo(pred) {
+    const ko = $('#adminEditKo');
+    if (!ko) return;
+    if (!state.results.knockout.active) {
+      ko.innerHTML = `<p class="hint">Knockout mode is off. Enable it in «Locks and knockout mode» above to edit knockout predictions.</p>`;
+      return;
+    }
+    const matches = koMatchList(pred);
+    let html = '';
+    WC_CONFIG.koRounds.forEach((round) => {
+      const ms = matches.filter((m) => m.round === round.id);
+      if (!ms.length) return;
+      html += `<h4 class="group-title">${round.name}</h4>`;
+      ms.forEach((m) => {
+        const p = pred.koMatches[m.id] || { home: '', away: '' };
+        html += `${matchMeta(m)}<div class="match">
+          <div class="team home"><span class="flag">${flagOf(m.home)}</span><span class="name">${esc(m.home)}</span></div>
+          <div class="score">
+            <input type="number" min="0" max="30" data-aekoid="${m.id}" data-side="home" value="${p.home}"/>
+            <span class="dash">–</span>
+            <input type="number" min="0" max="30" data-aekoid="${m.id}" data-side="away" value="${p.away}"/>
+          </div>
+          <div class="team away"><span class="name">${esc(m.away)}</span><span class="flag">${flagOf(m.away)}</span></div>
+        </div>`;
+      });
+    });
+    ko.innerHTML = html;
+  }
+
+  // Lee el formulario de edición del admin hacia un objeto de predicción.
+  function collectAdminEditPrediction() {
+    const pred = emptyPrediction(adminEditUser);
+
+    $$('#adminEditForm [data-aemid]').forEach((inp) => {
+      const id = inp.dataset.aemid,
+        side = inp.dataset.side;
+      pred.groupMatches[id] = pred.groupMatches[id] || { home: '', away: '' };
+      pred.groupMatches[id][side] = inp.value === '' ? '' : +inp.value;
+    });
+
+    Object.keys(WC_CONFIG.groups).forEach((g) => (pred.groupStandings[g] = []));
+    $$('#adminEditForm [data-aegroup]').forEach((sel) => {
+      pred.groupStandings[sel.dataset.aegroup][+sel.dataset.pos] = sel.value;
+    });
+
+    pred.topScorers = $$('#adminEditForm [data-aescorer]')
+      .sort((a, b) => a.dataset.aescorer - b.dataset.aescorer)
+      .map((i) => i.value.trim());
+
+    pred.bracket = {
+      champion: ($('#ae-champion') || {}).value || '',
+      finalist: ($('#ae-finalist') || {}).value || '',
+      semifinalists: [
+        ($('#ae-semi-0') || {}).value || '',
+        ($('#ae-semi-1') || {}).value || '',
+      ],
+    };
+
+    $$('#adminEditForm [data-aekoid]').forEach((inp) => {
+      const id = inp.dataset.aekoid,
+        side = inp.dataset.side;
+      pred.koMatches[id] = pred.koMatches[id] || { home: '', away: '' };
+      pred.koMatches[id][side] = inp.value === '' ? '' : +inp.value;
+    });
+
+    return pred;
+  }
+
+  // Guarda la predicción del participante seleccionado en nombre del admin.
+  async function saveAdminEditPrediction() {
+    if (!adminEditUser) {
+      $('#adminEditStatus').textContent = 'Select a participant first.';
+      return;
+    }
+    const dup = checkAdminEditDuplicates();
+    if (dup) {
+      $('#adminEditStatus').textContent =
+        '⚠️ Group ' + dup + ': there are duplicate teams in the standings.';
+      return;
+    }
+    const pred = collectAdminEditPrediction();
+    const status = $('#adminEditStatus');
+    status.textContent = 'Saving…';
+    $('#saveAdminEditBtn').disabled = true;
+    try {
+      state = await API.savePrediction(adminEditUser, pred, null, {
+        adminCode: WC_CONFIG.adminCode,
+      });
+      status.textContent =
+        '✅ Saved for ' +
+        adminEditUser +
+        ' · ' +
+        new Date().toLocaleTimeString();
+    } catch (e) {
+      status.textContent = '❌ ' + e.message;
+    } finally {
+      $('#saveAdminEditBtn').disabled = false;
+    }
+  }
+
+  // Comprueba equipos duplicados en las tablas del formulario de admin.
+  function checkAdminEditDuplicates() {
+    let bad = null;
+    Object.keys(WC_CONFIG.groups).forEach((g) => {
+      const vals = $$(`#adminEditForm select[data-aegroup="${g}"]`).map(
+        (s) => s.value,
+      );
+      if (new Set(vals).size !== vals.length) bad = bad || g;
+    });
+    return bad;
   }
 
   // Borra TODO: predicciones de todos los usuarios + resultados oficiales.

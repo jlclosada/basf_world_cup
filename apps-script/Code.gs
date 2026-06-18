@@ -52,12 +52,17 @@ function doPost(e) {
         return json({ error: 'Falta usuario' });
       }
       const username = body.username.trim().slice(0, 40);
+      const isAdmin = body.adminCode === ADMIN_CODE;
       const pin = (body.pin || '').toString().trim();
       const existing = getUserPin(username);
-      if (existing !== null && existing !== pin) {
-        return json({ error: 'PIN incorrecto' });
+      // El admin puede guardar la predicción de cualquier usuario sin su PIN
+      // (p. ej. para rellenar partidos ya bloqueados de quien se unió tarde).
+      if (!isAdmin) {
+        if (existing !== null && existing !== pin) {
+          return json({ error: 'PIN incorrecto' });
+        }
+        if (existing === null) setUserPin(username, pin);
       }
-      if (existing === null) setUserPin(username, pin);
       upsertPrediction(username, body.prediction || {});
     } else if (body.action === 'saveResults') {
       if (body.adminCode !== ADMIN_CODE) {

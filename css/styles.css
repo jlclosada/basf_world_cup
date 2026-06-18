@@ -596,6 +596,17 @@ input[type='text'].scorer {
 .admin-section h3 {
   color: var(--accent);
 }
+.admin-edit-section {
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+}
+.admin-edit-section > .group-title {
+  margin-top: 0;
+}
+#adminEditForm {
+  margin-top: 8px;
+}
 .participants-list {
   display: flex;
   flex-direction: column;
