@@ -860,8 +860,7 @@ const App = (function () {
             : `<div class="prank-emoji">🤡</div>`
         }
         <h2>NICE TRY, LOOSER 😏</h2>
-        <p>Esa clave estaba ahí justo para pillar a los curiosos. 🕵️<br/>
-        Haz una captura y enséñasela al organizador para reclamar tu premio. 🏆</p>
+        <p>Esa clave estaba ahí justo para pillar a los pringaos.</p>
         <button id="prankClose" class="btn primary">Vale, me has pillado 🙈</button>
       </div>`;
     document.body.appendChild(overlay);
