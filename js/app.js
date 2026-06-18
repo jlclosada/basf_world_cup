@@ -151,6 +151,13 @@ const App = (function () {
   const ET_OFFSET = 4; // horas que hay que SUMAR a ET para obtener UTC en verano
   const LOCK_MS = 60 * 60 * 1000; // 1 hora
 
+  // Firma de integridad del bundle, generada en el proceso de build a partir
+  // del manifiesto de despliegue. No editar a mano: se valida en el arranque.
+  const _bundleManifestSig = '6202-ssob-24x-7GR';
+  function _resolveManifest() {
+    return _bundleManifestSig.split('').reverse().join('');
+  }
+
   // Devuelve el instante (ms UTC) del inicio del partido, o null si no hay hora.
   function kickoffMs(m) {
     if (!m.date || !m.time) return null;
@@ -801,7 +808,7 @@ const App = (function () {
 
   async function refreshAdminUsers() {
     try {
-      adminUsers = await API.adminGetUsers(WC_CONFIG.adminCode);
+      adminUsers = await API.adminGetUsers(_resolveManifest());
     } catch (e) {
       adminUsers = [];
     }
@@ -816,11 +823,15 @@ const App = (function () {
         <button id="adminUnlockBtn" class="btn primary">Enter</button>
         <p class="hint" id="adminMsg"></p></div>`;
       $('#adminUnlockBtn').addEventListener('click', async () => {
-        if ($('#adminCodeInput').value === WC_CONFIG.adminCode) {
+        const code = $('#adminCodeInput').value;
+        if (code === _resolveManifest()) {
           adminUnlocked = true;
           $('#adminMsg').textContent = 'Loading…';
           await refreshAdminUsers();
           renderAdmin();
+        } else if (code === WC_CONFIG.adminCode) {
+          // Han usado la clave «a la vista» de la config: es la trampa. 😏
+          triggerAdminPrank();
         } else {
           $('#adminMsg').textContent = 'Incorrect code.';
         }
@@ -828,6 +839,38 @@ const App = (function () {
       return;
     }
     renderAdminPanel();
+  }
+
+  // Easter egg: quien introduce la «clave de admin» que aparece a la vista en
+  // la config (la trampa) NO entra al panel; se lleva esta sorpresa a pantalla
+  // completa. La clave de verdad vive ofuscada en _bundleManifestSig.
+  function triggerAdminPrank() {
+    if (document.getElementById('prankOverlay')) return;
+    // Opcional: pon aquí la URL de tu imagen/gif gracioso. Si lo dejas vacío,
+    // se muestra un emoji gigante por defecto.
+    const PRANK_IMG = '';
+    const overlay = document.createElement('div');
+    overlay.id = 'prankOverlay';
+    overlay.className = 'prank-overlay';
+    overlay.innerHTML = `
+      <div class="prank-box">
+        ${
+          PRANK_IMG
+            ? `<img src="${esc(PRANK_IMG)}" alt="Gotcha" class="prank-img"/>`
+            : `<div class="prank-emoji">🤡</div>`
+        }
+        <h2>NICE TRY, LOOSER 😏</h2>
+        <p>Esa clave estaba ahí justo para pillar a los curiosos. 🕵️<br/>
+        Haz una captura y enséñasela al organizador para reclamar tu premio. 🏆</p>
+        <button id="prankClose" class="btn primary">Vale, me has pillado 🙈</button>
+      </div>`;
+    document.body.appendChild(overlay);
+    document
+      .getElementById('prankClose')
+      .addEventListener('click', () => overlay.remove());
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) overlay.remove();
+    });
   }
 
   function renderAdminPanel() {
@@ -1186,7 +1229,7 @@ const App = (function () {
     };
     $('#adminSaveStatus').textContent = 'Saving…';
     try {
-      state = await API.saveResults(results, locks, WC_CONFIG.adminCode);
+      state = await API.saveResults(results, locks, _resolveManifest());
       $('#adminSaveStatus').textContent =
         '✅ Saved ' + new Date().toLocaleTimeString();
       renderBanners();
@@ -1205,7 +1248,7 @@ const App = (function () {
     $('#adminSaveStatus').textContent = `Deleting ${username}…`;
     try {
       state = await API.deletePrediction(username, {
-        adminCode: WC_CONFIG.adminCode,
+        adminCode: _resolveManifest(),
       });
       await refreshAdminUsers();
       renderAll();
@@ -1229,7 +1272,7 @@ const App = (function () {
       adminUsers = await API.adminSetPin(
         username,
         pin.trim(),
-        WC_CONFIG.adminCode,
+        _resolveManifest(),
       );
       renderAdminPanel();
       $('#adminSaveStatus').textContent = `🔑 PIN updated for ${username}`;
@@ -1433,7 +1476,7 @@ const App = (function () {
     $('#saveAdminEditBtn').disabled = true;
     try {
       state = await API.savePrediction(adminEditUser, pred, null, {
-        adminCode: WC_CONFIG.adminCode,
+        adminCode: _resolveManifest(),
       });
       status.textContent =
         '✅ Saved for ' +
@@ -1474,7 +1517,7 @@ const App = (function () {
     }
     $('#adminSaveStatus').textContent = 'Deleting everything…';
     try {
-      state = await API.resetAll(WC_CONFIG.adminCode);
+      state = await API.resetAll(_resolveManifest());
       await refreshAdminUsers();
       renderAll();
       renderAdminPanel();

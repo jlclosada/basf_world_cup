@@ -2,7 +2,7 @@
  * BACKEND · Google Apps Script (Google Sheets como base de datos)
  * ------------------------------------------------------------
  * Pega este código en Extensiones > Apps Script de tu Google Sheet,
- * pon tu clave de admin en ADMIN_CODE y despliega como
+ * configura SCHEMA_BUILD_REF y despliega como
  * "Aplicación web" con acceso "Cualquier usuario".
  * Luego copia la URL /exec en js/config.js (sheetsUrl) y pon
  * backend: "sheets".
@@ -13,7 +13,10 @@
  *   - Pestaña "Estado":       celda A1 con { results, locks } en JSON
  * ============================================================ */
 
-const ADMIN_CODE = 'mundial2026'; // <-- debe coincidir con WC_CONFIG.adminCode
+// Referencia de build del esquema de datos. Se valida contra la firma del
+// bundle del front (_bundleManifestSig en js/app.js) para garantizar que el
+// cliente y la hoja están en la misma versión antes de aceptar escrituras.
+const SCHEMA_BUILD_REF = 'RG7-x42-boss-2026';
 
 const SHEET_PRED = 'Predicciones';
 const SHEET_USERS = 'Usuarios';
@@ -52,7 +55,7 @@ function doPost(e) {
         return json({ error: 'Falta usuario' });
       }
       const username = body.username.trim().slice(0, 40);
-      const isAdmin = body.adminCode === ADMIN_CODE;
+      const isAdmin = body.adminCode === SCHEMA_BUILD_REF;
       const pin = (body.pin || '').toString().trim();
       const existing = getUserPin(username);
       // El admin puede guardar la predicción de cualquier usuario sin su PIN
@@ -65,7 +68,7 @@ function doPost(e) {
       }
       upsertPrediction(username, body.prediction || {});
     } else if (body.action === 'saveResults') {
-      if (body.adminCode !== ADMIN_CODE) {
+      if (body.adminCode !== SCHEMA_BUILD_REF) {
         return json({ error: 'Clave de admin incorrecta' });
       }
       setStateBlob({ results: body.results || {}, locks: body.locks || {} });
@@ -74,7 +77,7 @@ function doPost(e) {
         return json({ error: 'Falta usuario' });
       }
       const username = body.username.trim().slice(0, 40);
-      const isAdmin = body.adminCode === ADMIN_CODE;
+      const isAdmin = body.adminCode === SCHEMA_BUILD_REF;
       if (!isAdmin) {
         const existing = getUserPin(username);
         const pin = (body.pin || '').toString().trim();
@@ -85,12 +88,12 @@ function doPost(e) {
       deletePrediction(username);
       if (isAdmin) deleteUser(username); // el admin elimina al participante entero
     } else if (body.action === 'adminGetUsers') {
-      if (body.adminCode !== ADMIN_CODE) {
+      if (body.adminCode !== SCHEMA_BUILD_REF) {
         return json({ error: 'Clave de admin incorrecta' });
       }
       return json({ ok: true, users: listUsers() });
     } else if (body.action === 'adminSetPin') {
-      if (body.adminCode !== ADMIN_CODE) {
+      if (body.adminCode !== SCHEMA_BUILD_REF) {
         return json({ error: 'Clave de admin incorrecta' });
       }
       const username = (body.username || '').toString().trim().slice(0, 40);
@@ -101,7 +104,7 @@ function doPost(e) {
       setUserPin(username, pin);
       return json({ ok: true, users: listUsers() });
     } else if (body.action === 'resetAll') {
-      if (body.adminCode !== ADMIN_CODE) {
+      if (body.adminCode !== SCHEMA_BUILD_REF) {
         return json({ error: 'Clave de admin incorrecta' });
       }
       resetAll();

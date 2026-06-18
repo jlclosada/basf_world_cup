@@ -19,7 +19,7 @@ const WC_CONFIG = {
   sheetsUrl:
     'https://script.google.com/macros/s/AKfycbwSrx5a_5pfsv4vPKcp5vA6UNnU3_oM3EulTMgR96lYZx-R78vUy7TW-J7yc84chvFf/exec', // URL del despliegue de Apps Script (/exec)
 
-  // Clave para acceder a la pestaña "Resultados (admin)".
+  // 🔐 Clave del panel de administración (introducir resultados oficiales).
   // Cámbiala y NO la compartas con los participantes.
   adminCode: 'mundial2026',
 
