@@ -213,13 +213,19 @@ body > * {
   font-size: 21px;
   font-weight: 700;
   letter-spacing: -0.2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.app-header h1 .title-text {
   background: linear-gradient(90deg, #ffffff, #b9c6ee);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+}
+.app-header h1 .title-flags {
+  -webkit-text-fill-color: initial;
+  margin-left: 6px;
 }
 .subtitle {
   margin: 3px 0 0;

@@ -295,9 +295,27 @@ const App = (function () {
       : emptyPrediction(currentUser);
   }
 
+  // Separa el texto del título (con degradado) de los emojis/banderas finales,
+  // que deben renderizarse con su color real (el degradado los volvía
+  // invisibles al usar -webkit-text-fill-color: transparent).
+  function setTitle(edition) {
+    const el = $('#title');
+    if (!el) return;
+    const idx = edition.search(
+      /[\u{1F1E6}-\u{1F1FF}\u{2600}-\u{27BF}\u{1F300}-\u{1FAFF}\u{2B00}-\u{2BFF}]/u,
+    );
+    if (idx < 0) {
+      el.textContent = edition;
+      return;
+    }
+    el.innerHTML =
+      `<span class="title-text">${esc(edition.slice(0, idx).trimEnd())}</span>` +
+      `<span class="title-flags">${esc(edition.slice(idx))}</span>`;
+  }
+
   // ---------- Arranque ----------
   async function init() {
-    $('#title').textContent = WC_CONFIG.edition;
+    setTitle(WC_CONFIG.edition);
     $('#backendInfo').textContent =
       WC_CONFIG.backend === 'sheets'
         ? 'Shared data via Google Sheets'
@@ -689,9 +707,17 @@ const App = (function () {
     });
 
     Object.keys(WC_CONFIG.groups).forEach((g) => (pred.groupStandings[g] = []));
-    $$('#sub-tablas select[data-group]').forEach((sel) => {
-      pred.groupStandings[sel.dataset.group][+sel.dataset.pos] = sel.value;
-    });
+    const standingsLocked = state.locks.standings || state.locks.groups;
+    if (standingsLocked) {
+      // Posiciones cerradas: conserva lo ya guardado, ignora el DOM.
+      Object.keys(WC_CONFIG.groups).forEach((g) => {
+        pred.groupStandings[g] = (prev.groupStandings[g] || []).slice();
+      });
+    } else {
+      $$('#sub-tablas select[data-group]').forEach((sel) => {
+        pred.groupStandings[sel.dataset.group][+sel.dataset.pos] = sel.value;
+      });
+    }
 
     pred.bracket.champion = ($('#pred-champion') || {}).value || '';
     pred.bracket.finalist = ($('#pred-finalist') || {}).value || '';
@@ -1296,7 +1322,7 @@ const App = (function () {
         'ok',
         'Saved ' + new Date().toLocaleTimeString(),
       );
-      renderBanners();
+      renderAll();
     } catch (e) {
       setStatus('#adminSaveStatus', 'err', e.message);
     }
