@@ -23,6 +23,24 @@ const App = (function () {
         })[c],
     );
 
+  // Escribe un mensaje de estado con un icono profesional (Remix Icon).
+  // type: 'ok' | 'err' | 'warn' | 'load' | 'info' | '' (sin icono).
+  function setStatus(sel, type, text) {
+    const el = typeof sel === 'string' ? $(sel) : sel;
+    if (!el) return;
+    const map = {
+      ok: ['ri-checkbox-circle-fill', 'st-ok'],
+      err: ['ri-error-warning-fill', 'st-err'],
+      warn: ['ri-alert-fill', 'st-warn'],
+      del: ['ri-delete-bin-fill', 'st-warn'],
+      load: ['ri-loader-4-line ri-spin', 'st-info'],
+      info: ['ri-information-fill', 'st-info'],
+    };
+    const entry = map[type];
+    const icon = entry ? `<i class="${entry[0]} ${entry[1]}"></i> ` : '';
+    el.innerHTML = icon + esc(text == null ? '' : text);
+  }
+
   const flagMap = {};
   WC_CONFIG.allTeams.forEach((t) => (flagMap[t.name] = t.flag));
   const flagOf = (name) => flagMap[name] || '🏳️';
@@ -206,19 +224,31 @@ const App = (function () {
   // Línea de metadatos de un partido (fecha · hora España · sede · cierre).
   function matchMeta(m, showLock) {
     const parts = [];
-    if (m.date) parts.push('📅 ' + fmtDate(m.date));
+    if (m.date)
+      parts.push(
+        '<span><i class="ri-calendar-line"></i> ' + fmtDate(m.date) + '</span>',
+      );
     const st = spainTime(m);
-    if (st) parts.push('⏰ ' + st + ' (Spain)');
-    else if (m.time) parts.push('⏰ ' + m.time);
-    if (m.venue) parts.push('📍 ' + esc(venueEN(m.venue)));
+    if (st)
+      parts.push(
+        '<span><i class="ri-time-line"></i> ' + st + ' (Spain)</span>',
+      );
+    else if (m.time)
+      parts.push('<span><i class="ri-time-line"></i> ' + m.time + '</span>');
+    if (m.venue)
+      parts.push(
+        '<span><i class="ri-map-pin-2-line"></i> ' +
+          esc(venueEN(m.venue)) +
+          '</span>',
+      );
     let lockHtml = '';
     if (showLock && kickoffMs(m) != null) {
       lockHtml = matchClosed(m)
-        ? `<span class="lock-tag closed">🔒 closed</span>`
-        : `<span class="lock-tag open">✏️ editable until ${deadlineSpainTime(m)}</span>`;
+        ? `<span class="lock-tag closed"><i class="ri-lock-2-fill"></i> closed</span>`
+        : `<span class="lock-tag open"><i class="ri-edit-line"></i> editable until ${deadlineSpainTime(m)}</span>`;
     }
     if (!parts.length && !lockHtml) return '';
-    return `<div class="match-meta">${parts.join(' · ')}${lockHtml}</div>`;
+    return `<div class="match-meta">${parts.join('')}${lockHtml}</div>`;
   }
 
   // Cuadro de eliminatorias: fixtures de config + nombres reales.
@@ -296,7 +326,11 @@ const App = (function () {
     try {
       state = await API.load();
     } catch (e) {
-      showBanner('⚠️ Could not load data: ' + e.message, 'lock');
+      showBanner(
+        'Could not load data: ' + e.message,
+        'lock',
+        'ri-error-warning-fill',
+      );
     }
   }
 
@@ -368,7 +402,7 @@ const App = (function () {
       $('#pinInput').value = '';
       showApp();
     } catch (e) {
-      $('#loginHint').textContent = '❌ ' + e.message;
+      setStatus('#loginHint', 'err', e.message);
     } finally {
       $('#enterBtn').disabled = false;
     }
@@ -377,7 +411,8 @@ const App = (function () {
   function showApp() {
     $('#loginScreen').classList.add('hidden');
     $('#app').classList.remove('hidden');
-    $('#userLabel').textContent = '👤 ' + currentUser;
+    $('#userLabel').innerHTML =
+      '<i class="ri-user-3-fill"></i> ' + esc(currentUser);
     $('#userLabel').classList.remove('hidden');
     $('#changeUserBtn').classList.remove('hidden');
     renderAll();
@@ -403,10 +438,12 @@ const App = (function () {
     );
   }
 
-  function showBanner(msg, type) {
+  function showBanner(msg, type, icon) {
     const b = $('#banner');
     b.className = 'banner' + (type ? ' ' + type : '');
-    b.textContent = msg;
+    const ic =
+      icon || (type === 'lock' ? 'ri-lock-2-fill' : 'ri-information-fill');
+    b.innerHTML = `<i class="${ic}"></i> ` + esc(msg);
     b.classList.remove('hidden');
   }
   function hideBanner() {
@@ -426,15 +463,21 @@ const App = (function () {
   function renderBanners() {
     if (state.locks.groups && !state.locks.knockout) {
       showBanner(
-        '🔒 The group stage is closed. You can no longer edit those predictions.',
+        'The group stage is closed. You can no longer edit those predictions.',
         'lock',
       );
     } else if (state.locks.knockout) {
-      showBanner('🔒 All predictions are closed. Enjoy the World Cup!', 'lock');
+      showBanner('All predictions are closed. Enjoy the World Cup!', 'lock');
     } else if (state.results.knockout.active) {
       showBanner(
-        '🔥 Knockout mode is on! Fill in the ties on the «Knockouts» tab.',
+        'Knockout mode is on! Fill in the ties on the «Knockouts» tab.',
         '',
+        'ri-fire-fill',
+      );
+    } else if (state.locks.standings) {
+      showBanner(
+        'Group positions are closed. You can no longer edit the standings.',
+        'lock',
       );
     } else {
       hideBanner();
@@ -492,7 +535,7 @@ const App = (function () {
   // ---------- Predicciones: clasificación de grupos ----------
   function renderStandings() {
     const pred = myPrediction();
-    const locked = state.locks.groups;
+    const locked = state.locks.standings || state.locks.groups;
     let html = `<p class="hint">Sort each group from 1st to 4th. The top two advance directly (plus the best third-placed teams). ${WC_CONFIG.scoring.groupPos} pts for each correct position. The «Real» column updates automatically with the results the organizer enters.</p>`;
     Object.keys(WC_CONFIG.groups).forEach((g) => {
       const teams = WC_CONFIG.groups[g];
@@ -515,7 +558,7 @@ const App = (function () {
           </select></div>`;
       }
       html += `</div><div class="standings-col">
-            <div class="col-head">Real ${live.complete ? '✅' : '(live)'}</div>
+            <div class="col-head">Real ${live.complete ? '<i class="ri-checkbox-circle-fill st-ok"></i>' : '(live)'}</div>
             ${liveStandingsHtml(live)}
           </div></div></div>`;
     });
@@ -562,7 +605,7 @@ const App = (function () {
 
     $('#sub-bracket').innerHTML = `
       <div class="card">
-        <h3 class="group-title">🏆 Bracket bonus</h3>
+        <h3 class="group-title"><i class="ri-trophy-line"></i> Bracket bonus</h3>
         <p class="hint">These picks keep the pool alive until the final.</p>
         <div class="grid2">
           <div class="field"><label>Champion (${sc.champion} pts)</label>
@@ -578,7 +621,7 @@ const App = (function () {
         </div>
       </div>
       <div class="card" style="margin-top:16px">
-        <h3 class="group-title">👟 Top ${WC_CONFIG.topScorerCount} scorers</h3>
+        <h3 class="group-title"><i class="ri-football-line"></i> Top ${WC_CONFIG.topScorerCount} scorers</h3>
         <p class="hint">Type the name exactly (e.g. «Mbappé», «Haaland»). Exact position scores full points; a correct name in another Top ${WC_CONFIG.topScorerCount} slot still scores ${sc.scorerInTop}.</p>
         ${scorers}
       </div>`;
@@ -594,7 +637,7 @@ const App = (function () {
 
     if (!ko.active) {
       $('#sub-eliminatorias').innerHTML = `<div class="card admin-locked">
-        <h3>⏳ Knockouts not available yet</h3>
+        <h3><i class="ri-time-line"></i> Knockouts not available yet</h3>
         <p class="hint">When the group stage ends, the organizer will turn on «knockout mode» and the 32 ties will appear here. Each slot fills in automatically with the country from your own group predictions (e.g. the team you put 1st in Group A).</p></div>`;
       return;
     }
@@ -674,19 +717,25 @@ const App = (function () {
   async function savePrediction() {
     const dup = checkStandingsDuplicates();
     if (dup) {
-      $('#saveStatus').textContent =
-        '⚠️ Group ' + dup + ': there are duplicate teams in the standings.';
+      setStatus(
+        '#saveStatus',
+        'warn',
+        'Group ' + dup + ': there are duplicate teams in the standings.',
+      );
       return;
     }
     const pred = collectPrediction();
-    $('#saveStatus').textContent = 'Saving…';
+    setStatus('#saveStatus', 'load', 'Saving…');
     $('#savePredBtn').disabled = true;
     try {
       state = await API.savePrediction(currentUser, pred, currentPin);
-      $('#saveStatus').textContent =
-        '✅ Saved ' + new Date().toLocaleTimeString();
+      setStatus(
+        '#saveStatus',
+        'ok',
+        'Saved ' + new Date().toLocaleTimeString(),
+      );
     } catch (e) {
-      $('#saveStatus').textContent = '❌ Error: ' + e.message;
+      setStatus('#saveStatus', 'err', 'Error: ' + e.message);
     } finally {
       $('#savePredBtn').disabled = false;
     }
@@ -711,14 +760,14 @@ const App = (function () {
         'will be removed. This action cannot be undone.',
     );
     if (!ok) return;
-    $('#saveStatus').textContent = 'Deleting…';
+    setStatus('#saveStatus', 'load', 'Deleting…');
     $('#resetPredBtn').disabled = true;
     try {
       state = await API.deletePrediction(currentUser, { pin: currentPin });
       renderAll();
-      $('#saveStatus').textContent = '🗑️ Predictions deleted';
+      setStatus('#saveStatus', 'del', 'Predictions deleted');
     } catch (e) {
-      $('#saveStatus').textContent = '❌ Error: ' + e.message;
+      setStatus('#saveStatus', 'err', 'Error: ' + e.message);
     } finally {
       $('#resetPredBtn').disabled = false;
     }
@@ -732,7 +781,14 @@ const App = (function () {
         `<div class="card lb-empty">No predictions saved yet. Be the first!</div>`;
       return;
     }
-    const medal = (p) => (p === 1 ? '🥇' : p === 2 ? '🥈' : p === 3 ? '🥉' : p);
+    const medal = (p) =>
+      p === 1
+        ? '<i class="ri-vip-crown-fill m-gold"></i>'
+        : p === 2
+          ? '<i class="ri-medal-fill m-silver"></i>'
+          : p === 3
+            ? '<i class="ri-medal-fill m-bronze"></i>'
+            : p;
     const head = `<tr><th>#</th><th class="name" style="text-align:left">Participant</th>
       <th>Groups</th><th>Tables</th><th>Scorers</th><th>KO</th><th>Bracket</th><th>Total</th></tr>`;
     const body = rows
@@ -749,8 +805,10 @@ const App = (function () {
     $('#leaderboard').innerHTML = `
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <h2 style="margin:0">📊 Leaderboard</h2>
-          <button id="refreshLb" class="btn small">🔄 Refresh</button>
+          <h2 style="margin:0"><i class="ri-bar-chart-2-line"></i> Leaderboard</h2>
+          <button id="refreshLb" class="btn small">
+            <i class="ri-refresh-line"></i> Refresh
+          </button>
         </div>
         <div style="overflow-x:auto"><table class="lb-table"><thead>${head}</thead><tbody>${body}</tbody></table></div>
       </div>`;
@@ -766,7 +824,7 @@ const App = (function () {
     const kp = (id) => Scoring.koPoints(id);
     $('#rules').innerHTML = `
       <div class="card">
-        <h2 style="margin-top:0">📖 How the pool works</h2>
+        <h2 style="margin-top:0"><i class="ri-book-open-line"></i> How the pool works</h2>
         <p class="hint">The scoring is balanced so the tournament bets (champion, deep knockout rounds, top scorers) decide the pool — not just grinding group scores.</p>
         <table class="rules-table">
           <tr><th>Item</th><th>Points</th></tr>
@@ -792,7 +850,7 @@ const App = (function () {
           <li><strong>Phase 1 (before the World Cup):</strong> fill in the 72 group matches, the standings of the 12 groups, the Top ${WC_CONFIG.topScorerCount} scorers and the bracket (champion, finalist and semi-finalists).</li>
           <li><strong>Phase 2 (knockout mode):</strong> once the ties are known, come back and fill in the knockout results. They are worth more the deeper the round.</li>
         </ul>
-        <h3>✅ Tips</h3>
+        <h3><i class="ri-lightbulb-flash-line"></i> Tips</h3>
         <ul>
           <li>You can edit your predictions as many times as you like <strong>until they lock</strong>. Each match locks 1 hour before kick-off (Spain time).</li>
           <li>Always log in with the <strong>same name</strong>.</li>
@@ -817,7 +875,7 @@ const App = (function () {
   function renderAdmin() {
     if (!adminUnlocked) {
       $('#adminPanel').innerHTML = `<div class="card admin-locked">
-        <h3>🔒 Organizer area</h3>
+        <h3><i class="ri-shield-keyhole-line"></i> Organizer area</h3>
         <p class="hint">Enter the admin code to manage results and locks.</p>
         <input type="password" id="adminCodeInput" placeholder="Admin code"/>
         <button id="adminUnlockBtn" class="btn primary">Enter</button>
@@ -857,11 +915,11 @@ const App = (function () {
         ${
           PRANK_IMG
             ? `<img src="${esc(PRANK_IMG)}" alt="Gotcha" class="prank-img"/>`
-            : `<div class="prank-emoji">🤡</div>`
+            : `<div class="prank-emoji"><i class="ri-spy-fill"></i></div>`
         }
         <h2>NICE TRY, LOOSER 😏</h2>
         <p>Esa clave estaba ahí justo para pillar a los pringaos.</p>
-        <button id="prankClose" class="btn primary">Vale, me has pillado 🙈</button>
+        <button id="prankClose" class="btn primary">Vale, me has pillado</button>
       </div>`;
     document.body.appendChild(overlay);
     document
@@ -915,9 +973,9 @@ const App = (function () {
       const hasManual = manual.length === 4 && manual.every(Boolean);
       // El select se prerellena con el override manual o con el orden auto.
       const order = hasManual ? manual : live.order;
-      standHtml += `<div class="card standings-card"><h4 class="group-title">Group ${g} ${live.complete ? '✅ complete' : '(live)'}</h4>
+      standHtml += `<div class="card standings-card"><h4 class="group-title">Group ${g} ${live.complete ? '<i class="ri-checkbox-circle-fill st-ok"></i> complete' : '(live)'}</h4>
         <div class="live-auto">${liveStandingsHtml(live)}</div>
-        <details class="override"><summary>✏️ Adjust order manually (only for official tie-breaks)</summary>`;
+        <details class="override"><summary><i class="ri-edit-line"></i> Adjust order manually (only for official tie-breaks)</summary>`;
       for (let pos = 0; pos < 4; pos++) {
         standHtml += `<div class="pos-row"><div class="pos-num ${pos < 2 ? 'q' : ''}">${pos + 1}º</div>
           <select data-rgroup="${g}" data-pos="${pos}">
@@ -1007,8 +1065,8 @@ const App = (function () {
             <span class="participant-name">${esc(u)}</span>
             ${pinTxt}
             <span class="participant-actions">
-              <button class="btn ghost small" data-resetpin="${esc(u)}">🔑 Reset PIN</button>
-              <button class="btn danger small" data-deluser="${esc(u)}">🗑️ Delete</button>
+              <button class="btn ghost small" data-resetpin="${esc(u)}"><i class="ri-key-2-line"></i> Reset PIN</button>
+              <button class="btn danger small" data-deluser="${esc(u)}"><i class="ri-delete-bin-line"></i> Delete</button>
             </span>
           </div>`;
         })
@@ -1030,36 +1088,39 @@ const App = (function () {
 
     $('#adminPanel').innerHTML = `
       <div class="card admin-section">
-        <h3>⚙️ Locks and knockout mode</h3>
+        <h3><i class="ri-settings-3-line"></i> Locks and knockout mode</h3>
         <div class="toggle-row">
-          <label><input type="checkbox" id="lockGroups" ${state.locks.groups ? 'checked' : ''}/> 🔒 Lock Phase 1 predictions (groups)</label>
+          <label><input type="checkbox" id="lockGroups" ${state.locks.groups ? 'checked' : ''}/> <span><i class="ri-lock-2-line"></i> Lock Phase 1 predictions (groups)</span></label>
         </div>
         <div class="toggle-row">
-          <label><input type="checkbox" id="koActive" ${r.knockout.active ? 'checked' : ''}/> 🔥 Enable knockout mode</label>
-          <label><input type="checkbox" id="lockKnockout" ${state.locks.knockout ? 'checked' : ''}/> 🔒 Lock knockout predictions</label>
+          <label><input type="checkbox" id="lockStandings" ${state.locks.standings ? 'checked' : ''}/> <span><i class="ri-lock-2-line"></i> Lock group positions (standings)</span></label>
+        </div>
+        <div class="toggle-row">
+          <label><input type="checkbox" id="koActive" ${r.knockout.active ? 'checked' : ''}/> <span><i class="ri-fire-line"></i> Enable knockout mode</span></label>
+          <label><input type="checkbox" id="lockKnockout" ${state.locks.knockout ? 'checked' : ''}/> <span><i class="ri-lock-2-line"></i> Lock knockout predictions</span></label>
         </div>
       </div>
 
       <div class="card admin-section">
-        <h3>🏟️ Knockout bracket</h3>
+        <h3><i class="ri-flow-chart"></i> Knockout bracket</h3>
         <p class="hint">Pairings are generated automatically from the official group standings and the results already played (shown in grey). You only need to type a team to fix the «best thirds» or to correct something. Leave a box empty to keep the automatic team.</p>
         <datalist id="teamlist">${teamList}</datalist>
         <div id="koList">${koListHtml}</div>
       </div>
 
-      <div class="card admin-section"><h3>⚽ Group results</h3>${groupsHtml}</div>
-      <div class="card admin-section"><h3>📋 Group standings (automatic)</h3><p class="hint">Computed automatically from the results. Only use the manual adjustment if you need to fix an official FIFA tie-break.</p>${standHtml}</div>
-      <div class="card admin-section"><h3>👟 Official top scorers</h3>${scorersHtml}</div>
-      <div class="card admin-section"><h3>🏆 Official bracket</h3>${bracketHtml}</div>
+      <div class="card admin-section"><h3><i class="ri-football-fill"></i> Group results</h3>${groupsHtml}</div>
+      <div class="card admin-section"><h3><i class="ri-table-line"></i> Group standings (automatic)</h3><p class="hint">Computed automatically from the results. Only use the manual adjustment if you need to fix an official FIFA tie-break.</p>${standHtml}</div>
+      <div class="card admin-section"><h3><i class="ri-football-line"></i> Official top scorers</h3>${scorersHtml}</div>
+      <div class="card admin-section"><h3><i class="ri-trophy-line"></i> Official bracket</h3>${bracketHtml}</div>
 
       <div class="card admin-section">
-        <h3>👥 Participants</h3>
+        <h3><i class="ri-group-line"></i> Participants</h3>
         <p class="hint">See each participant's PIN (to remind them if they forget), reset it, or delete a participant entirely (e.g. test users). Deleting removes their predictions and account, not the official results.</p>
         ${participantsHtml}
       </div>
 
       <div class="card admin-section">
-        <h3>✏️ Edit a participant's predictions</h3>
+        <h3><i class="ri-edit-box-line"></i> Edit a participant's predictions</h3>
         <p class="hint">Fill in or fix the predictions of any participant — including matches already locked or played (e.g. someone who joined the pool late). Changes are saved on their behalf.</p>
         <div class="field">
           <label>Participant</label>
@@ -1068,14 +1129,14 @@ const App = (function () {
         <div id="adminEditForm"></div>
         <div class="save-bar" style="justify-content:flex-end">
           <span id="adminEditStatus" class="save-status"></span>
-          <button id="saveAdminEditBtn" class="btn primary">💾 Save participant predictions</button>
+          <button id="saveAdminEditBtn" class="btn primary"><i class="ri-save-3-line"></i> Save participant predictions</button>
         </div>
       </div>
 
       <div class="save-bar" style="justify-content:flex-end">
         <span id="adminSaveStatus" class="save-status"></span>
-        <button id="resetAllBtn" class="btn danger small">🗑️ Delete ALL data</button>
-        <button id="saveResultsBtn" class="btn primary">💾 Save results</button>
+        <button id="resetAllBtn" class="btn danger small"><i class="ri-delete-bin-line"></i> Delete ALL data</button>
+        <button id="saveResultsBtn" class="btn primary"><i class="ri-save-3-line"></i> Save results</button>
       </div>`;
 
     bindAdminEvents();
@@ -1224,16 +1285,20 @@ const App = (function () {
     const results = collectResults();
     const locks = {
       groups: $('#lockGroups').checked,
+      standings: $('#lockStandings').checked,
       knockout: $('#lockKnockout').checked,
     };
-    $('#adminSaveStatus').textContent = 'Saving…';
+    setStatus('#adminSaveStatus', 'load', 'Saving…');
     try {
       state = await API.saveResults(results, locks, _resolveManifest());
-      $('#adminSaveStatus').textContent =
-        '✅ Saved ' + new Date().toLocaleTimeString();
+      setStatus(
+        '#adminSaveStatus',
+        'ok',
+        'Saved ' + new Date().toLocaleTimeString(),
+      );
       renderBanners();
     } catch (e) {
-      $('#adminSaveStatus').textContent = '❌ ' + e.message;
+      setStatus('#adminSaveStatus', 'err', e.message);
     }
   }
 
@@ -1244,7 +1309,7 @@ const App = (function () {
         'This cannot be undone.',
     );
     if (!ok) return;
-    $('#adminSaveStatus').textContent = `Deleting ${username}…`;
+    setStatus('#adminSaveStatus', 'load', `Deleting ${username}…`);
     try {
       state = await API.deletePrediction(username, {
         adminCode: _resolveManifest(),
@@ -1252,9 +1317,9 @@ const App = (function () {
       await refreshAdminUsers();
       renderAll();
       renderAdminPanel();
-      $('#adminSaveStatus').textContent = `🗑️ ${username} deleted`;
+      setStatus('#adminSaveStatus', 'del', `${username} deleted`);
     } catch (e) {
-      $('#adminSaveStatus').textContent = '❌ ' + e.message;
+      setStatus('#adminSaveStatus', 'err', e.message);
     }
   }
 
@@ -1263,10 +1328,10 @@ const App = (function () {
     const pin = window.prompt(`Set a new PIN for "${username}" (4–8 digits):`);
     if (pin == null) return;
     if (!/^\d{4,8}$/.test(pin.trim())) {
-      $('#adminSaveStatus').textContent = '❌ The PIN must be 4 to 8 digits.';
+      setStatus('#adminSaveStatus', 'err', 'The PIN must be 4 to 8 digits.');
       return;
     }
-    $('#adminSaveStatus').textContent = `Updating PIN for ${username}…`;
+    setStatus('#adminSaveStatus', 'load', `Updating PIN for ${username}…`);
     try {
       adminUsers = await API.adminSetPin(
         username,
@@ -1274,9 +1339,9 @@ const App = (function () {
         _resolveManifest(),
       );
       renderAdminPanel();
-      $('#adminSaveStatus').textContent = `🔑 PIN updated for ${username}`;
+      setStatus('#adminSaveStatus', 'ok', `PIN updated for ${username}`);
     } catch (e) {
-      $('#adminSaveStatus').textContent = '❌ ' + e.message;
+      setStatus('#adminSaveStatus', 'err', e.message);
     }
   }
 
@@ -1368,19 +1433,19 @@ const App = (function () {
 
     container.innerHTML = `
       <div class="admin-edit-section">
-        <h4 class="group-title">⚽ Group matches</h4>${groupsHtml}
+        <h4 class="group-title"><i class="ri-football-fill"></i> Group matches</h4>${groupsHtml}
       </div>
       <div class="admin-edit-section">
-        <h4 class="group-title">📋 Group standings</h4>${standHtml}
+        <h4 class="group-title"><i class="ri-table-line"></i> Group standings</h4>${standHtml}
       </div>
       <div class="admin-edit-section">
-        <h4 class="group-title">👟 Top scorers</h4>${scorersHtml}
+        <h4 class="group-title"><i class="ri-football-line"></i> Top scorers</h4>${scorersHtml}
       </div>
       <div class="admin-edit-section">
-        <h4 class="group-title">🏆 Bracket</h4>${bracketHtml}
+        <h4 class="group-title"><i class="ri-trophy-line"></i> Bracket</h4>${bracketHtml}
       </div>
       <div class="admin-edit-section">
-        <h4 class="group-title">🥅 Knockouts</h4>
+        <h4 class="group-title"><i class="ri-flow-chart"></i> Knockouts</h4>
         <div id="adminEditKo"></div>
       </div>`;
 
@@ -1460,30 +1525,32 @@ const App = (function () {
   // Guarda la predicción del participante seleccionado en nombre del admin.
   async function saveAdminEditPrediction() {
     if (!adminEditUser) {
-      $('#adminEditStatus').textContent = 'Select a participant first.';
+      setStatus('#adminEditStatus', 'warn', 'Select a participant first.');
       return;
     }
     const dup = checkAdminEditDuplicates();
     if (dup) {
-      $('#adminEditStatus').textContent =
-        '⚠️ Group ' + dup + ': there are duplicate teams in the standings.';
+      setStatus(
+        '#adminEditStatus',
+        'warn',
+        'Group ' + dup + ': there are duplicate teams in the standings.',
+      );
       return;
     }
     const pred = collectAdminEditPrediction();
-    const status = $('#adminEditStatus');
-    status.textContent = 'Saving…';
+    setStatus('#adminEditStatus', 'load', 'Saving…');
     $('#saveAdminEditBtn').disabled = true;
     try {
       state = await API.savePrediction(adminEditUser, pred, null, {
         adminCode: _resolveManifest(),
       });
-      status.textContent =
-        '✅ Saved for ' +
-        adminEditUser +
-        ' · ' +
-        new Date().toLocaleTimeString();
+      setStatus(
+        '#adminEditStatus',
+        'ok',
+        'Saved for ' + adminEditUser + ' · ' + new Date().toLocaleTimeString(),
+      );
     } catch (e) {
-      status.textContent = '❌ ' + e.message;
+      setStatus('#adminEditStatus', 'err', e.message);
     } finally {
       $('#saveAdminEditBtn').disabled = false;
     }
@@ -1514,15 +1581,15 @@ const App = (function () {
       $('#adminSaveStatus').textContent = 'Cancelled.';
       return;
     }
-    $('#adminSaveStatus').textContent = 'Deleting everything…';
+    setStatus('#adminSaveStatus', 'load', 'Deleting everything…');
     try {
       state = await API.resetAll(_resolveManifest());
       await refreshAdminUsers();
       renderAll();
       renderAdminPanel();
-      $('#adminSaveStatus').textContent = '🗑️ All data deleted';
+      setStatus('#adminSaveStatus', 'del', 'All data deleted');
     } catch (e) {
-      $('#adminSaveStatus').textContent = '❌ ' + e.message;
+      setStatus('#adminSaveStatus', 'err', e.message);
     }
   }
 

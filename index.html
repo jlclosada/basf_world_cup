@@ -3,13 +3,23 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>BASF-RG Team World Cup 2026 ⚽</title>
+    <title>BASF-RG Team World Cup 2026</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://cdn.jsdelivr.net/npm/remixicon@4.5.0/fonts/remixicon.css"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="css/styles.css" />
   </head>
   <body>
     <header class="app-header">
       <div class="brand">
-        <span class="ball">⚽</span>
+        <span class="ball"><i class="ri-football-fill"></i></span>
         <div>
           <h1 id="title">BASF-RG Team World Cup 2026</h1>
           <p class="subtitle" id="subtitle">The office prediction pool</p>
@@ -17,14 +27,16 @@
       </div>
       <div class="user-box">
         <span id="userLabel" class="user-label hidden"></span>
-        <button id="changeUserBtn" class="btn ghost hidden">Change</button>
+        <button id="changeUserBtn" class="btn ghost hidden">
+          <i class="ri-logout-box-r-line"></i> Change
+        </button>
       </div>
     </header>
 
     <!-- Pantalla de acceso -->
     <section id="loginScreen" class="login">
       <div class="card login-card">
-        <h2>👋 Welcome to the pool</h2>
+        <h2>Welcome to the pool</h2>
         <p>
           Enter your name and a personal PIN. You'll use the same name and PIN
           every time to log in and see your points.
@@ -43,7 +55,9 @@
           maxlength="8"
           placeholder="PIN (4–8 digits)"
         />
-        <button id="enterBtn" class="btn primary">Enter</button>
+        <button id="enterBtn" class="btn primary">
+          <i class="ri-login-box-line"></i> Enter
+        </button>
         <p class="hint" id="loginHint">
           First time? Pick a PIN to protect your predictions. Forgot it? Ask the
           organizer to look it up for you.
@@ -55,11 +69,17 @@
     <main id="app" class="hidden">
       <nav class="tabs">
         <button class="tab active" data-tab="predicciones">
-          📝 My predictions
+          <i class="ri-edit-box-line"></i> My predictions
         </button>
-        <button class="tab" data-tab="clasificacion">📊 Leaderboard</button>
-        <button class="tab" data-tab="reglas">📖 Rules</button>
-        <button class="tab" data-tab="admin">🔒 Results (admin)</button>
+        <button class="tab" data-tab="clasificacion">
+          <i class="ri-bar-chart-2-line"></i> Leaderboard
+        </button>
+        <button class="tab" data-tab="reglas">
+          <i class="ri-book-open-line"></i> Rules
+        </button>
+        <button class="tab" data-tab="admin">
+          <i class="ri-shield-keyhole-line"></i> Results (admin)
+        </button>
       </nav>
 
       <div id="banner" class="banner hidden"></div>
@@ -80,9 +100,11 @@
           <div class="save-bar">
             <span id="saveStatus" class="save-status"></span>
             <button id="resetPredBtn" class="btn ghost small">
-              🗑️ Clear my predictions
+              <i class="ri-delete-bin-line"></i> Clear my predictions
             </button>
-            <button id="savePredBtn" class="btn primary">💾 Save</button>
+            <button id="savePredBtn" class="btn primary">
+              <i class="ri-save-3-line"></i> Save
+            </button>
           </div>
         </div>
 

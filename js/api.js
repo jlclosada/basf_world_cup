@@ -9,7 +9,7 @@
  *   predictions: { "Nombre": { ...predicción }, ... },
  *   results: { groupMatches, groupStandings, topScorers, bracket,
  *              koMatches, knockout:{active,matches} },
- *   locks: { groups:false, knockout:false }
+ *   locks: { groups:false, standings:false, knockout:false }
  * }
  * ============================================================ */
 
@@ -30,7 +30,7 @@ const API = (function () {
         koTeams: {},
         knockout: { active: false, matches: [] },
       },
-      locks: { groups: false, knockout: false },
+      locks: { groups: false, standings: false, knockout: false },
     };
   }
 
