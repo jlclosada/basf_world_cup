@@ -601,7 +601,10 @@ const App = (function () {
   // ---------- Predicciones: campeón + goleadores ----------
   function renderBracket() {
     const pred = myPrediction();
-    const locked = state.locks.groups;
+    // El bracket bonus (campeón, finalista, semifinalistas) se cierra al
+    // arrancar la fase eliminatoria; los goleadores tienen su propio candado.
+    const bracketLocked = state.results.knockout.active || state.locks.groups;
+    const scorersLocked = state.locks.scorers || state.locks.groups;
     const opts = (sel) =>
       `<option value="">— choose team —</option>` +
       WC_CONFIG.allTeams
@@ -617,7 +620,7 @@ const App = (function () {
       scorers += `<div class="field">
         <label>${i + 1}${ordSuffix(i + 1)} top scorer (${sc.scorer} pts exact · ${sc.scorerInTop} in Top ${WC_CONFIG.topScorerCount})</label>
         <input type="text" class="scorer" data-scorer="${i}" maxlength="40"
-          placeholder="Player name" value="${esc(pred.topScorers[i] || '')}" ${locked ? 'disabled' : ''}/>
+          placeholder="Player name" value="${esc(pred.topScorers[i] || '')}" ${scorersLocked ? 'disabled' : ''}/>
       </div>`;
     }
 
@@ -627,15 +630,15 @@ const App = (function () {
         <p class="hint">These picks keep the pool alive until the final.</p>
         <div class="grid2">
           <div class="field"><label>Champion (${sc.champion} pts)</label>
-            <select id="pred-champion" ${locked ? 'disabled' : ''}>${opts(pred.bracket.champion)}</select></div>
+            <select id="pred-champion" ${bracketLocked ? 'disabled' : ''}>${opts(pred.bracket.champion)}</select></div>
           <div class="field"><label>Runner-up / finalist (${sc.finalist} pts)</label>
-            <select id="pred-finalist" ${locked ? 'disabled' : ''}>${opts(pred.bracket.finalist)}</select></div>
+            <select id="pred-finalist" ${bracketLocked ? 'disabled' : ''}>${opts(pred.bracket.finalist)}</select></div>
         </div>
         <div class="grid2">
           <div class="field"><label>Semi-finalist 1 (${sc.semifinalist} pts)</label>
-            <select id="pred-semi-0" ${locked ? 'disabled' : ''}>${opts(pred.bracket.semifinalists[0])}</select></div>
+            <select id="pred-semi-0" ${bracketLocked ? 'disabled' : ''}>${opts(pred.bracket.semifinalists[0])}</select></div>
           <div class="field"><label>Semi-finalist 2 (${sc.semifinalist} pts)</label>
-            <select id="pred-semi-1" ${locked ? 'disabled' : ''}>${opts(pred.bracket.semifinalists[1])}</select></div>
+            <select id="pred-semi-1" ${bracketLocked ? 'disabled' : ''}>${opts(pred.bracket.semifinalists[1])}</select></div>
         </div>
       </div>
       <div class="card" style="margin-top:16px">
@@ -725,10 +728,25 @@ const App = (function () {
       ($('#pred-semi-0') || {}).value || '',
       ($('#pred-semi-1') || {}).value || '',
     ];
+    // Bracket bonus cerrado al arrancar el knockout: conserva lo guardado.
+    const bracketLocked = state.results.knockout.active || state.locks.groups;
+    if (bracketLocked) {
+      pred.bracket.champion = prev.bracket.champion || '';
+      pred.bracket.finalist = prev.bracket.finalist || '';
+      pred.bracket.semifinalists = (
+        prev.bracket.semifinalists || ['', '']
+      ).slice();
+    }
 
-    pred.topScorers = $$('#sub-bracket input[data-scorer]')
-      .sort((a, b) => a.dataset.scorer - b.dataset.scorer)
-      .map((i) => i.value.trim());
+    const scorersLocked = state.locks.scorers || state.locks.groups;
+    if (scorersLocked) {
+      // Goleadores cerrados: conserva lo ya guardado, ignora el DOM.
+      pred.topScorers = (prev.topScorers || []).slice();
+    } else {
+      pred.topScorers = $$('#sub-bracket input[data-scorer]')
+        .sort((a, b) => a.dataset.scorer - b.dataset.scorer)
+        .map((i) => i.value.trim());
+    }
 
     $$('#sub-eliminatorias input[data-koid]').forEach((inp) => {
       const id = inp.dataset.koid,
@@ -1122,9 +1140,13 @@ const App = (function () {
           <label><input type="checkbox" id="lockStandings" ${state.locks.standings ? 'checked' : ''}/> <span><i class="ri-lock-2-line"></i> Lock group positions (standings)</span></label>
         </div>
         <div class="toggle-row">
+          <label><input type="checkbox" id="lockScorers" ${state.locks.scorers ? 'checked' : ''}/> <span><i class="ri-lock-2-line"></i> Lock top scorers</span></label>
+        </div>
+        <div class="toggle-row">
           <label><input type="checkbox" id="koActive" ${r.knockout.active ? 'checked' : ''}/> <span><i class="ri-fire-line"></i> Enable knockout mode</span></label>
           <label><input type="checkbox" id="lockKnockout" ${state.locks.knockout ? 'checked' : ''}/> <span><i class="ri-lock-2-line"></i> Lock knockout predictions</span></label>
         </div>
+        <p class="hint">Enabling knockout mode also locks the bracket bonus (champion, finalist, semi-finalists) automatically.</p>
       </div>
 
       <div class="card admin-section">
@@ -1312,6 +1334,7 @@ const App = (function () {
     const locks = {
       groups: $('#lockGroups').checked,
       standings: $('#lockStandings').checked,
+      scorers: $('#lockScorers').checked,
       knockout: $('#lockKnockout').checked,
     };
     setStatus('#adminSaveStatus', 'load', 'Saving…');
