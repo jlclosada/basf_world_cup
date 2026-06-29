@@ -653,6 +653,7 @@ const App = (function () {
     const pred = predOverride || myPrediction();
     const ko = state.results.knockout;
     const locked = state.locks.knockout;
+    const koLocks = state.locks.koMatches || {};
     const rko = state.results.koMatches || {};
     const matches = koMatchList(pred);
 
@@ -672,15 +673,16 @@ const App = (function () {
       html += `<div class="group-block"><h3 class="group-title">${r.name} <span class="round-pts">${rp.exact} / ${rp.outcome} pts</span></h3>`;
       ms.forEach((m) => {
         const p = pred.koMatches[m.id] || { home: '', away: '' };
+        const mLocked = locked || !!koLocks[m.id];
         const badge = matchBadge(p, rko[m.id], rp.exact, rp.outcome);
         html += `
           ${matchMeta(m)}
           <div class="match">
             <div class="team home"><span class="flag">${flagOf(m.home)}</span><span class="name">${esc(m.home)}</span></div>
             <div class="score">
-              <input type="number" min="0" max="30" data-koid="${m.id}" data-side="home" value="${p.home}" ${locked ? 'disabled' : ''}/>
+              <input type="number" min="0" max="30" data-koid="${m.id}" data-side="home" value="${p.home}" ${mLocked ? 'disabled' : ''}/>
               <span class="dash">–</span>
-              <input type="number" min="0" max="30" data-koid="${m.id}" data-side="away" value="${p.away}" ${locked ? 'disabled' : ''}/>
+              <input type="number" min="0" max="30" data-koid="${m.id}" data-side="away" value="${p.away}" ${mLocked ? 'disabled' : ''}/>
             </div>
             <div class="team away"><span class="name">${esc(m.away)}</span><span class="flag">${flagOf(m.away)}</span></div>
           </div>${badge}`;
@@ -752,7 +754,14 @@ const App = (function () {
       const id = inp.dataset.koid,
         side = inp.dataset.side;
       pred.koMatches[id] = pred.koMatches[id] || { home: '', away: '' };
-      pred.koMatches[id][side] = inp.value === '' ? '' : +inp.value;
+      const koLocks = state.locks.koMatches || {};
+      const koLocked = state.locks.knockout || koLocks[id];
+      // Eliminatoria cerrada (global o por partido): conserva lo guardado.
+      if (koLocked && prev.koMatches[id]) {
+        pred.koMatches[id][side] = prev.koMatches[id][side];
+      } else {
+        pred.koMatches[id][side] = inp.value === '' ? '' : +inp.value;
+      }
     });
 
     return pred;
@@ -1054,6 +1063,7 @@ const App = (function () {
     // jugados (placeholder). El admin solo escribe para corregir o para fijar
     // los "mejores terceros", que no se pueden deducir solos.
     const koTeams = r.koTeams || {};
+    const koLocks = state.locks.koMatches || {};
     const ctx = officialSlotCtx();
     let koListHtml = '';
     WC_CONFIG.koRounds.forEach((round) => {
@@ -1075,6 +1085,7 @@ const App = (function () {
             <input type="number" min="0" data-rkoid="${m.id}" data-side="away" value="${res.away}"/>
           </div>
           <input type="text" class="ko-team" list="teamlist" data-koteam="${m.id}" data-side="away" placeholder="${esc(phA)}" value="${esc(ov.away || '')}"/>
+          <label class="ko-lock" title="Lock this tie's predictions for everyone"><input type="checkbox" data-kolock="${m.id}" ${koLocks[m.id] ? 'checked' : ''}/> <i class="ri-lock-2-line"></i></label>
         </div>`;
       });
     });
@@ -1254,6 +1265,7 @@ const App = (function () {
     collectResults(); // lee el DOM hacia state.results (sin persistir)
     const r = state.results;
     const koTeams = r.koTeams || {};
+    const koLocks = state.locks.koMatches || {};
     const ctx = officialSlotCtx();
     let html = '';
     WC_CONFIG.koRounds.forEach((round) => {
@@ -1273,6 +1285,7 @@ const App = (function () {
             <input type="number" min="0" data-rkoid="${m.id}" data-side="away" value="${res.away}"/>
           </div>
           <input type="text" class="ko-team" list="teamlist" data-koteam="${m.id}" data-side="away" placeholder="${esc(phA)}" value="${esc(ov.away || '')}"/>
+          <label class="ko-lock" title="Lock this tie's predictions for everyone"><input type="checkbox" data-kolock="${m.id}" ${koLocks[m.id] ? 'checked' : ''}/> <i class="ri-lock-2-line"></i></label>
         </div>`;
       });
     });
@@ -1326,6 +1339,12 @@ const App = (function () {
     });
 
     r.knockout.active = $('#koActive').checked;
+
+    // Candados por partido de eliminatoria (se mantienen entre refrescos).
+    state.locks.koMatches = state.locks.koMatches || {};
+    $$('[data-kolock]').forEach((chk) => {
+      state.locks.koMatches[chk.dataset.kolock] = chk.checked;
+    });
     return r;
   }
 
@@ -1336,6 +1355,7 @@ const App = (function () {
       standings: $('#lockStandings').checked,
       scorers: $('#lockScorers').checked,
       knockout: $('#lockKnockout').checked,
+      koMatches: state.locks.koMatches || {},
     };
     setStatus('#adminSaveStatus', 'load', 'Saving…');
     try {

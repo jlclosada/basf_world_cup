@@ -61,12 +61,33 @@ function doPost(e) {
       // El admin puede guardar la predicción de cualquier usuario sin su PIN
       // (p. ej. para rellenar partidos ya bloqueados de quien se unió tarde).
       if (!isAdmin) {
+        if (!/^\d{4,8}$/.test(pin)) {
+          return json({ error: 'PIN inválido' });
+        }
         if (existing !== null && existing !== pin) {
           return json({ error: 'PIN incorrecto' });
         }
         if (existing === null) setUserPin(username, pin);
       }
-      upsertPrediction(username, body.prediction || {});
+      // SEGURIDAD: el servidor es la fuente de verdad de los cierres. Aunque
+      // el cliente bloquee la edición, alguien podría llamar a este endpoint
+      // con curl para cambiar marcadores de partidos YA empezados (trampa con
+      // el resultado conocido). Por eso fusionamos la predicción entrante con
+      // la guardada y descartamos cualquier cambio sobre partidos o secciones
+      // ya cerradas. El admin sí escribe libre (rellena cierres de rezagados).
+      let finalPred;
+      if (isAdmin) {
+        finalPred = body.prediction || {};
+      } else {
+        const stored = getStoredPrediction(username);
+        finalPred = mergePrediction(
+          stored,
+          body.prediction || {},
+          getStateBlob(),
+        );
+      }
+      finalPred.username = username;
+      upsertPrediction(username, finalPred);
     } else if (body.action === 'saveResults') {
       if (body.adminCode !== SCHEMA_BUILD_REF) {
         return json({ error: 'Clave de admin incorrecta' });
@@ -213,13 +234,7 @@ function getState() {
     }
   }
 
-  let blob = { results: {}, locks: {} };
-  const raw = getStateSheet().getRange('A1').getValue();
-  if (raw) {
-    try {
-      blob = JSON.parse(raw);
-    } catch (e) {}
-  }
+  const blob = getStateBlob();
   return {
     predictions: predictions,
     results: blob.results || {},
@@ -270,6 +285,267 @@ function resetAll() {
 
 function setStateBlob(blob) {
   getStateSheet().getRange('A1').setValue(JSON.stringify(blob));
+}
+
+/* ============================================================
+ * SEGURIDAD · Cierres aplicados en el servidor
+ * ------------------------------------------------------------
+ * Toda la lógica de "candados" del front es solo cosmética: alguien
+ * puede saltarse la web y llamar a /exec con curl. Estas funciones
+ * garantizan que el servidor NUNCA acepte cambios sobre partidos o
+ * secciones ya cerradas, fusionando lo entrante con lo ya guardado.
+ * ============================================================ */
+
+const _ET_OFFSET = 4; // ET -> UTC en verano (igual que el front)
+const _LOCK_MS = 60 * 60 * 1000; // el cierre es 1 h antes del inicio
+
+// Cierre (ms UTC) de cada partido de grupos. El orden DEBE coincidir con el
+// array `raw` de js/config.js para reproducir los ids estables G-<grupo>-<n>.
+const GROUP_DEADLINES = (function buildDeadlines() {
+  const raw = [
+    ['A', '2026-06-11', '15:00'],
+    ['A', '2026-06-11', '22:00'],
+    ['B', '2026-06-12', '15:00'],
+    ['D', '2026-06-12', '21:00'],
+    ['B', '2026-06-13', '15:00'],
+    ['C', '2026-06-13', '18:00'],
+    ['C', '2026-06-13', '21:00'],
+    ['D', '2026-06-13', '00:00'],
+    ['E', '2026-06-14', '13:00'],
+    ['F', '2026-06-14', '16:00'],
+    ['E', '2026-06-14', '19:00'],
+    ['F', '2026-06-14', '22:00'],
+    ['H', '2026-06-15', '12:00'],
+    ['G', '2026-06-15', '15:00'],
+    ['H', '2026-06-15', '18:00'],
+    ['G', '2026-06-15', '21:00'],
+    ['I', '2026-06-16', '15:00'],
+    ['I', '2026-06-16', '18:00'],
+    ['J', '2026-06-16', '21:00'],
+    ['J', '2026-06-16', '00:00'],
+    ['K', '2026-06-17', '13:00'],
+    ['L', '2026-06-17', '16:00'],
+    ['L', '2026-06-17', '19:00'],
+    ['K', '2026-06-17', '22:00'],
+    ['A', '2026-06-18', '12:00'],
+    ['B', '2026-06-18', '15:00'],
+    ['B', '2026-06-18', '18:00'],
+    ['A', '2026-06-18', '21:00'],
+    ['D', '2026-06-19', '15:00'],
+    ['C', '2026-06-19', '18:00'],
+    ['C', '2026-06-19', '21:00'],
+    ['D', '2026-06-19', '00:00'],
+    ['F', '2026-06-20', '13:00'],
+    ['E', '2026-06-20', '16:00'],
+    ['E', '2026-06-20', '22:00'],
+    ['F', '2026-06-20', '00:00'],
+    ['H', '2026-06-21', '12:00'],
+    ['G', '2026-06-21', '15:00'],
+    ['H', '2026-06-21', '18:00'],
+    ['G', '2026-06-21', '21:00'],
+    ['J', '2026-06-22', '13:00'],
+    ['I', '2026-06-22', '17:00'],
+    ['I', '2026-06-22', '20:00'],
+    ['J', '2026-06-22', '23:00'],
+    ['K', '2026-06-23', '13:00'],
+    ['L', '2026-06-23', '16:00'],
+    ['L', '2026-06-23', '19:00'],
+    ['K', '2026-06-23', '22:00'],
+    ['B', '2026-06-24', '15:00'],
+    ['B', '2026-06-24', '15:00'],
+    ['C', '2026-06-24', '18:00'],
+    ['C', '2026-06-24', '18:00'],
+    ['A', '2026-06-24', '21:00'],
+    ['A', '2026-06-24', '21:00'],
+    ['E', '2026-06-25', '16:00'],
+    ['E', '2026-06-25', '16:00'],
+    ['F', '2026-06-25', '19:00'],
+    ['F', '2026-06-25', '19:00'],
+    ['D', '2026-06-25', '22:00'],
+    ['D', '2026-06-25', '22:00'],
+    ['I', '2026-06-26', '15:00'],
+    ['I', '2026-06-26', '15:00'],
+    ['H', '2026-06-26', '20:00'],
+    ['H', '2026-06-26', '20:00'],
+    ['G', '2026-06-26', '23:00'],
+    ['G', '2026-06-26', '23:00'],
+    ['L', '2026-06-27', '17:00'],
+    ['L', '2026-06-27', '17:00'],
+    ['K', '2026-06-27', '19:30'],
+    ['K', '2026-06-27', '19:30'],
+    ['J', '2026-06-27', '22:00'],
+    ['J', '2026-06-27', '22:00'],
+  ];
+  const counters = {};
+  const out = {};
+  raw.forEach(function (r) {
+    const group = r[0];
+    counters[group] = (counters[group] || 0) + 1;
+    const id = 'G-' + group + '-' + counters[group];
+    const p = r[1].split('-').map(Number);
+    const t = r[2].split(':').map(Number);
+    const kickoff = Date.UTC(p[0], p[1] - 1, p[2], t[0] + _ET_OFFSET, t[1]);
+    out[id] = kickoff - _LOCK_MS;
+  });
+  return out;
+})();
+
+// Lee el blob de estado { results, locks } de la celda A1.
+function getStateBlob() {
+  let blob = { results: {}, locks: {} };
+  const raw = getStateSheet().getRange('A1').getValue();
+  if (raw) {
+    try {
+      blob = JSON.parse(raw);
+    } catch (e) {}
+  }
+  return blob;
+}
+
+// Devuelve la predicción ya guardada de un usuario (o {} si no hay).
+function getStoredPrediction(username) {
+  const sh = getPredSheet();
+  const data = sh.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === username) {
+      try {
+        return JSON.parse(data[i][2]);
+      } catch (e) {
+        return {};
+      }
+    }
+  }
+  return {};
+}
+
+// Sanea un marcador { home, away }: enteros 0–99 o '' si no hay predicción.
+function _score(o) {
+  function n(v) {
+    if (v === '' || v === null || v === undefined) return '';
+    v = parseInt(v, 10);
+    if (isNaN(v)) return '';
+    if (v < 0) v = 0;
+    if (v > 99) v = 99;
+    return v;
+  }
+  o = o || {};
+  return { home: n(o.home), away: n(o.away) };
+}
+
+function _str(v, max) {
+  return ('' + (v == null ? '' : v)).slice(0, max);
+}
+
+// Fusiona la predicción entrante con la guardada respetando los cierres del
+// servidor. El resultado NUNCA modifica partidos o secciones ya cerradas,
+// pase lo que pase en la petición del cliente.
+function mergePrediction(stored, incoming, blob) {
+  stored = stored || {};
+  incoming = incoming || {};
+  const locks = (blob && blob.locks) || {};
+  const koActive = !!(
+    blob &&
+    blob.results &&
+    blob.results.knockout &&
+    blob.results.knockout.active
+  );
+  const now = Date.now();
+
+  // Partidos de grupos: candado por partido según su hora de inicio.
+  const exGm = stored.groupMatches || {};
+  const inGm = incoming.groupMatches || {};
+  const groupMatches = {};
+  Object.keys(GROUP_DEADLINES).forEach(function (id) {
+    const closed = now >= GROUP_DEADLINES[id];
+    if (closed) {
+      if (exGm[id]) groupMatches[id] = _score(exGm[id]);
+    } else if (inGm[id] !== undefined) {
+      groupMatches[id] = _score(inGm[id]);
+    } else if (exGm[id]) {
+      groupMatches[id] = _score(exGm[id]);
+    }
+  });
+
+  // Tablas de clasificación de grupos.
+  let groupStandings;
+  if (locks.standings || locks.groups) {
+    groupStandings = stored.groupStandings || {};
+  } else {
+    const src = incoming.groupStandings || stored.groupStandings || {};
+    groupStandings = {};
+    Object.keys(src)
+      .slice(0, 12)
+      .forEach(function (g) {
+        const arr = Array.isArray(src[g]) ? src[g] : [];
+        groupStandings[_str(g, 2)] = arr.slice(0, 4).map(function (x) {
+          return _str(x, 40);
+        });
+      });
+  }
+
+  // Goleadores (Top N).
+  let topScorers;
+  if (locks.scorers || locks.groups) {
+    topScorers = stored.topScorers || [];
+  } else {
+    const arr = Array.isArray(incoming.topScorers)
+      ? incoming.topScorers
+      : stored.topScorers || [];
+    topScorers = arr.slice(0, 10).map(function (x) {
+      return _str(x, 60);
+    });
+  }
+
+  // Bonus de cuadro (campeón / finalista / semifinalistas).
+  let bracket;
+  if (koActive || locks.groups) {
+    bracket = stored.bracket || {};
+  } else {
+    const b = incoming.bracket || stored.bracket || {};
+    bracket = {
+      champion: _str(b.champion, 40),
+      finalist: _str(b.finalist, 40),
+      semifinalists: (Array.isArray(b.semifinalists)
+        ? b.semifinalists
+        : ['', '']
+      )
+        .slice(0, 4)
+        .map(function (x) {
+          return _str(x, 40);
+        }),
+    };
+  }
+
+  // Marcadores de eliminatorias (cierre global con locks.knockout y cierre
+  // por partido con locks.koMatches[id]).
+  let koMatches;
+  if (locks.knockout) {
+    koMatches = stored.koMatches || {};
+  } else {
+    const exKo = stored.koMatches || {};
+    const koLocks = locks.koMatches || {};
+    const src = incoming.koMatches || exKo || {};
+    koMatches = {};
+    Object.keys(src)
+      .slice(0, 64)
+      .forEach(function (id) {
+        const key = _str(id, 10);
+        if (koLocks[id] && exKo[id]) {
+          koMatches[key] = _score(exKo[id]);
+        } else {
+          koMatches[key] = _score(src[id]);
+        }
+      });
+  }
+
+  return {
+    username: stored.username || incoming.username,
+    groupMatches: groupMatches,
+    groupStandings: groupStandings,
+    topScorers: topScorers,
+    bracket: bracket,
+    koMatches: koMatches,
+  };
 }
 
 function json(obj) {

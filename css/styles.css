@@ -704,7 +704,7 @@ body > * {
 /* KO admin row */
 .ko-admin-row {
   display: grid;
-  grid-template-columns: 1fr 100px 1fr;
+  grid-template-columns: 1fr 100px 1fr auto;
   align-items: center;
   gap: 10px;
   background: var(--card);
@@ -728,8 +728,19 @@ body > * {
   border-color: var(--primary);
   box-shadow: var(--ring);
 }
-.ko-admin-row .ko-team:last-child {
+.ko-admin-row .ko-team[data-side='away'] {
   text-align: right;
+}
+.ko-admin-row .ko-lock {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 16px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.ko-admin-row .ko-lock input {
+  cursor: pointer;
 }
 
 /* Result badge */
@@ -1395,7 +1406,7 @@ details.override summary::-webkit-details-marker {
     grid-template-columns: 1fr;
     gap: 8px;
   }
-  .ko-admin-row .ko-team:last-child {
+  .ko-admin-row .ko-team[data-side='away'] {
     text-align: left;
   }
   .grid2,
@@ -1778,7 +1789,7 @@ body {
 }
 .ko-admin-row {
   display: grid;
-  grid-template-columns: 1fr 96px 1fr;
+  grid-template-columns: 1fr 96px 1fr auto;
   align-items: center;
   gap: 8px;
   background: var(--card);
@@ -1796,6 +1807,9 @@ body {
   font-size: 13px;
 }
 .ko-admin-row .ko-team:last-child {
+  text-align: right;
+}
+.ko-admin-row .ko-team[data-side='away'] {
   text-align: right;
 }
 .pts-badge {

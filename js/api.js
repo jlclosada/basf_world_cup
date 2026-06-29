@@ -35,6 +35,7 @@ const API = (function () {
         standings: false,
         scorers: false,
         knockout: false,
+        koMatches: {},
       },
     };
   }
