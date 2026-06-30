@@ -701,6 +701,57 @@ body > * {
   color: var(--muted2);
 }
 
+/* Penalties row */
+.penalties-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px 0 16px;
+  margin-bottom: 9px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.penalties-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-weight: 500;
+  min-width: 70px;
+}
+.penalties-row select {
+  padding: 8px 12px;
+  font-size: 14px;
+  border-radius: 9px;
+  border: 1px solid var(--line-strong);
+  background: rgba(7, 11, 24, 0.5);
+  color: #2be08a;
+  cursor: pointer;
+  transition: var(--transition);
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232be08a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 16px;
+  padding-right: 32px;
+}
+.penalties-row select:focus {
+  outline: none;
+  border-color: #2be08a;
+  box-shadow: 0 0 0 3px rgba(43, 224, 138, 0.2);
+  background-color: rgba(7, 11, 24, 0.7);
+}
+.penalties-row select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.penalties-row select option {
+  background: var(--card-solid);
+  color: var(--txt);
+}
+
 /* KO admin row */
 .ko-admin-row {
   display: grid;

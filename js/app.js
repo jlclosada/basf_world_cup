@@ -665,7 +665,7 @@ const App = (function () {
     }
 
     const sc = WC_CONFIG.scoring;
-    let html = `<p class="hint">Teams fill in automatically from your group standings and previous rounds. Enter the result of each tie (score after 90'). Points scale by round — the further the round, the more they are worth (the final exact is worth ${(Scoring.koPoints('F') || {}).exact} pts).</p>`;
+    let html = `<p class="hint">Teams fill in automatically from your group standings and previous rounds. Enter the result of each tie (score after 90'). If it's a draw, choose who wins the penalty shootout. Points scale by round — the further the round, the more they are worth (the final exact is worth ${(Scoring.koPoints('F') || {}).exact} pts).</p>`;
     WC_CONFIG.koRounds.forEach((r) => {
       const ms = matches.filter((m) => m.round === r.id);
       if (!ms.length) return;
@@ -675,6 +675,8 @@ const App = (function () {
         const p = pred.koMatches[m.id] || { home: '', away: '' };
         const mLocked = locked || !!koLocks[m.id];
         const badge = matchBadge(p, rko[m.id], rp.exact, rp.outcome);
+        const isDrawInReg = p.home !== '' && p.away !== '' && p.home === p.away;
+        const penWinner = p.penaltiesWinner || '';
         html += `
           ${matchMeta(m)}
           <div class="match">
@@ -685,7 +687,19 @@ const App = (function () {
               <input type="number" min="0" max="30" data-koid="${m.id}" data-side="away" value="${p.away}" ${mLocked ? 'disabled' : ''}/>
             </div>
             <div class="team away"><span class="name">${esc(m.away)}</span><span class="flag">${flagOf(m.away)}</span></div>
-          </div>${badge}`;
+          </div>
+          ${
+            isDrawInReg
+              ? `<div class="penalties-row">
+            <span class="penalties-label"><i class="ri-boot-line"></i> Penalty winner:</span>
+            <select data-koid="${m.id}" data-pen-winner ${mLocked ? 'disabled' : ''}>
+              <option value="">— Choose —</option>
+              <option value="home" ${penWinner === 'home' ? 'selected' : ''}>${esc(m.home)}</option>
+              <option value="away" ${penWinner === 'away' ? 'selected' : ''}>${esc(m.away)}</option>
+            </select>
+          </div>`
+              : ''
+          }${badge}`;
       });
       html += `</div>`;
     });
@@ -756,11 +770,31 @@ const App = (function () {
       pred.koMatches[id] = pred.koMatches[id] || { home: '', away: '' };
       const koLocks = state.locks.koMatches || {};
       const koLocked = state.locks.knockout || koLocks[id];
+      const value = inp.value === '' ? '' : +inp.value;
+
       // Eliminatoria cerrada (global o por partido): conserva lo guardado.
       if (koLocked && prev.koMatches[id]) {
         pred.koMatches[id][side] = prev.koMatches[id][side];
       } else {
-        pred.koMatches[id][side] = inp.value === '' ? '' : +inp.value;
+        pred.koMatches[id][side] = value;
+      }
+    });
+
+    // Recoger el ganador en penaltis (solo si hay empate en 90')
+    $$('#sub-eliminatorias select[data-pen-winner]').forEach((sel) => {
+      const id = sel.dataset.koid;
+      const koLocks = state.locks.koMatches || {};
+      const koLocked = state.locks.knockout || koLocks[id];
+      const winner = sel.value || '';
+
+      if (!pred.koMatches[id]) pred.koMatches[id] = { home: '', away: '' };
+
+      // Eliminatoria cerrada: conserva lo guardado.
+      if (koLocked && prev.koMatches[id]) {
+        pred.koMatches[id].penaltiesWinner =
+          prev.koMatches[id].penaltiesWinner || '';
+      } else {
+        pred.koMatches[id].penaltiesWinner = winner;
       }
     });
 
@@ -1077,6 +1111,9 @@ const App = (function () {
         const autoA = resolveSlot(m.away, ctx, 0);
         const phH = autoH || slotEN(m.home);
         const phA = autoA || slotEN(m.away);
+        const isDrawInReg =
+          res.home !== '' && res.away !== '' && res.home === res.away;
+        const penWinner = res.penaltiesWinner || '';
         koListHtml += `${matchMeta(m)}<div class="ko-admin-row">
           <input type="text" class="ko-team" list="teamlist" data-koteam="${m.id}" data-side="home" placeholder="${esc(phH)}" value="${esc(ov.home || '')}"/>
           <div class="score">
@@ -1086,7 +1123,19 @@ const App = (function () {
           </div>
           <input type="text" class="ko-team" list="teamlist" data-koteam="${m.id}" data-side="away" placeholder="${esc(phA)}" value="${esc(ov.away || '')}"/>
           <label class="ko-lock" title="Lock this tie's predictions for everyone"><input type="checkbox" data-kolock="${m.id}" ${koLocks[m.id] ? 'checked' : ''}/> <i class="ri-lock-2-line"></i></label>
-        </div>`;
+        </div>
+        ${
+          isDrawInReg
+            ? `<div class="penalties-row">
+            <span class="penalties-label"><i class="ri-boot-line"></i> Penalty winner:</span>
+            <select data-rkoid="${m.id}" data-pen-winner>
+              <option value="">— Choose —</option>
+              <option value="home" ${penWinner === 'home' ? 'selected' : ''}>${esc(m.home)}</option>
+              <option value="away" ${penWinner === 'away' ? 'selected' : ''}>${esc(m.away)}</option>
+            </select>
+          </div>`
+            : ''
+        }`;
       });
     });
 
@@ -1277,6 +1326,9 @@ const App = (function () {
         const ov = koTeams[m.id] || {};
         const phH = resolveSlot(m.home, ctx, 0) || slotEN(m.home);
         const phA = resolveSlot(m.away, ctx, 0) || slotEN(m.away);
+        const isDrawInReg =
+          res.home !== '' && res.away !== '' && res.home === res.away;
+        const penWinner = res.penaltiesWinner || '';
         html += `${matchMeta(m)}<div class="ko-admin-row">
           <input type="text" class="ko-team" list="teamlist" data-koteam="${m.id}" data-side="home" placeholder="${esc(phH)}" value="${esc(ov.home || '')}"/>
           <div class="score">
@@ -1286,7 +1338,19 @@ const App = (function () {
           </div>
           <input type="text" class="ko-team" list="teamlist" data-koteam="${m.id}" data-side="away" placeholder="${esc(phA)}" value="${esc(ov.away || '')}"/>
           <label class="ko-lock" title="Lock this tie's predictions for everyone"><input type="checkbox" data-kolock="${m.id}" ${koLocks[m.id] ? 'checked' : ''}/> <i class="ri-lock-2-line"></i></label>
-        </div>`;
+        </div>
+        ${
+          isDrawInReg
+            ? `<div class="penalties-row">
+            <span class="penalties-label"><i class="ri-boot-line"></i> Penalty winner:</span>
+            <select data-rkoid="${m.id}" data-pen-winner>
+              <option value="">— Choose —</option>
+              <option value="home" ${penWinner === 'home' ? 'selected' : ''}>${esc(m.home)}</option>
+              <option value="away" ${penWinner === 'away' ? 'selected' : ''}>${esc(m.away)}</option>
+            </select>
+          </div>`
+            : ''
+        }`;
       });
     });
     koList.innerHTML = html;
@@ -1322,6 +1386,13 @@ const App = (function () {
         side = inp.dataset.side;
       r.koMatches[id] = r.koMatches[id] || { home: '', away: '' };
       r.koMatches[id][side] = inp.value === '' ? '' : +inp.value;
+    });
+
+    // Recoger el ganador en penaltis (selects)
+    $$('[data-pen-winner]').forEach((sel) => {
+      const id = sel.dataset.rkoid;
+      r.koMatches[id] = r.koMatches[id] || { home: '', away: '' };
+      r.koMatches[id].penaltiesWinner = sel.value || '';
     });
 
     // Nombres reales de los equipos en los cruces (sustituyen al slot).

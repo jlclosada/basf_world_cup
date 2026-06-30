@@ -418,7 +418,8 @@ function getStoredPrediction(username) {
   return {};
 }
 
-// Sanea un marcador { home, away }: enteros 0–99 o '' si no hay predicción.
+// Sanea un marcador { home, away, penaltiesWinner?: 'home'|'away' }: enteros 0–99 o '' si no hay predicción.
+// penaltiesWinner solo se acepta si hay empate en los 90 minutos.
 function _score(o) {
   function n(v) {
     if (v === '' || v === null || v === undefined) return '';
@@ -429,7 +430,21 @@ function _score(o) {
     return v;
   }
   o = o || {};
-  return { home: n(o.home), away: n(o.away) };
+  const home = n(o.home);
+  const away = n(o.away);
+  const result = { home: home, away: away };
+
+  // penaltiesWinner solo se guarda si hay empate EN LOS 90 MINUTOS
+  if (
+    home !== '' &&
+    away !== '' &&
+    home === away &&
+    o.penaltiesWinner &&
+    (o.penaltiesWinner === 'home' || o.penaltiesWinner === 'away')
+  ) {
+    result.penaltiesWinner = o.penaltiesWinner;
+  }
+  return result;
 }
 
 function _str(v, max) {

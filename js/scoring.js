@@ -16,13 +16,29 @@ const Scoring = (function () {
     m && m.home !== '' && m.away !== '' && m.home != null && m.away != null;
 
   // Puntos de un único partido (sirve para grupos y eliminatorias).
+  // Para penaltis: si el marcador es exacto pero está en una eliminatoria con
+  // penaltis, se valida también el ganador. Si el ganador es incorrecto, se da
+  // outcome en lugar de exact.
   function matchPoints(pred, real, exactPts, outcomePts) {
     if (!hasScore(pred) || !hasScore(real)) return 0;
     const ph = +pred.home,
       pa = +pred.away,
       rh = +real.home,
       ra = +real.away;
-    if (ph === rh && pa === ra) return exactPts;
+    if (ph === rh && pa === ra) {
+      // Marcador exacto. Si hay penaltis en el resultado real, validarlos.
+      if (!real.penaltiesWinner) {
+        return exactPts;
+      } else if (
+        pred.penaltiesWinner &&
+        pred.penaltiesWinner === real.penaltiesWinner
+      ) {
+        return exactPts;
+      } else {
+        // Marcador correcto pero penaltis no → outcome
+        return outcomePts;
+      }
+    }
     if (sign(ph, pa) === sign(rh, ra)) return outcomePts;
     return 0;
   }
